@@ -1,59 +1,105 @@
-# OBS Plugin Template
+# Loudness Balance Monitor (音量バランスモニター)
 
-## Introduction
+OBS Studio plugin for real-time audio loudness monitoring. Detects when your voice is too quiet or buried in BGM during streaming.
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
+## Features
 
-* Boilerplate plugin source code
-* A CMake project file
-* GitHub Actions workflows and repository actions
+- **Voice Activity Detection (VAD)**: Threshold-based detection with attack/release timing
+- **LUFS Measurement**: Short-term loudness (3-second window) using libebur128
+- **Balance Monitoring**: Voice-BGM delta with OK/WARN/BAD status indicators
+- **Mix Loudness**: Overall loudness level monitoring
+- **Peak/Clip Detection**: Sample peak monitoring to prevent clipping
+- **Qt Dock UI**: Integrated OBS dock with meters and status colors
 
-## Supported Build Environments
+## Build Requirements
 
-| Platform  | Tool   |
-|-----------|--------|
-| Windows   | Visual Studio 17 2022 |
-| macOS     | XCode 16.0 |
-| Windows, macOS  | CMake 3.30.5 |
-| Ubuntu 24.04 | CMake 3.28.3 |
-| Ubuntu 24.04 | `ninja-build` |
-| Ubuntu 24.04 | `pkg-config`
-| Ubuntu 24.04 | `build-essential` |
+| Platform | Tool |
+|----------|------|
+| Windows | Visual Studio 17 2022 |
+| macOS | XCode 16.0 |
+| Windows, macOS | CMake 3.30+ |
+| Ubuntu 24.04 | CMake 3.28+, ninja-build, pkg-config, build-essential |
 
-## Quick Start
+## Build Instructions (Windows)
 
-An absolute bare-bones [Quick Start Guide](https://github.com/obsproject/obs-plugintemplate/wiki/Quick-Start-Guide) is available in the wiki.
+```powershell
+# Configure
+cmake --preset windows-x64-local
 
-## Documentation
+# Build and install
+cmake --build build_x64 --config RelWithDebInfo
+```
 
-All documentation can be found in the [Plugin Template Wiki](https://github.com/obsproject/obs-plugintemplate/wiki).
+The plugin will be automatically installed to `C:/ProgramData/obs-studio/plugins`.
 
-Suggested reading to get up and running:
+For other platforms:
+```bash
+# macOS
+cmake --preset macos
+cmake --build --preset macos --config RelWithDebInfo
 
-* [Getting started](https://github.com/obsproject/obs-plugintemplate/wiki/Getting-Started)
-* [Build system requirements](https://github.com/obsproject/obs-plugintemplate/wiki/Build-System-Requirements)
-* [Build system options](https://github.com/obsproject/obs-plugintemplate/wiki/CMake-Build-System-Options)
+# Ubuntu
+cmake --preset ubuntu-x86_64
+cmake --build --preset ubuntu-x86_64 --config RelWithDebInfo
+```
 
-## GitHub Actions & CI
+## Usage
 
-Default GitHub Actions workflows are available for the following repository actions:
+1. Open OBS Studio
+2. Go to **Docks** menu and enable **Loudness Balance Monitor**
+3. In the dock:
+   - Select your **Voice** source (microphone)
+   - Check the **BGM** sources you want to monitor
+   - Adjust **VAD Threshold** if voice detection is too sensitive/insensitive
+   - Set **Balance Target** (default: +6 LU)
+   - Choose **Mix Preset** (YouTube Standard, Quiet/Safe, Loud/Aggressive)
 
-* `push`: Run for commits or tags pushed to `master` or `main` branches.
-* `pr-pull`: Run when a Pull Request has been pushed or synchronized.
-* `dispatch`: Run when triggered by the workflow dispatch in GitHub's user interface.
-* `build-project`: Builds the actual project and is triggered by other workflows.
-* `check-format`: Checks CMake and plugin source code formatting and is triggered by other workflows.
+### Status Indicators
 
-The workflows make use of GitHub repository actions (contained in `.github/actions`) and build scripts (contained in `.github/scripts`) which are not needed for local development, but might need to be adjusted if additional/different steps are required to build the plugin.
+| Status | Balance (Voice-BGM) | Mix Loudness | Clip |
+|--------|---------------------|--------------|------|
+| OK (Green) | >= +6 LU | >= -18 LUFS | < -1 dBFS |
+| WARN (Yellow) | +3 to +6 LU | -22 to -18 LUFS | -1 to 0 dBFS |
+| BAD (Red) | < +3 LU | < -22 LUFS | >= 0 dBFS |
 
-### Retrieving build artifacts
+### Recommendations
 
-Successful builds on GitHub Actions will produce build artifacts that can be downloaded for testing. These artifacts are commonly simple archives and will not contain package installers or installation programs.
+- Keep **Balance** at OK (green) so your voice is clearly audible over BGM
+- Keep **Mix** at OK to ensure your stream isn't too quiet for viewers
+- Avoid **Clip** warnings by reducing source volumes if peaks are too high
 
-### Building a Release
+## Known Limitations
 
-To create a release, an appropriately named tag needs to be pushed to the `main`/`master` branch using semantic versioning (e.g., `12.3.4`, `23.4.5-beta2`). A draft release will be created on the associated repository with generated installer packages or installation programs attached as release artifacts.
+- **Mix is an estimate**: The plugin combines Voice + selected BGM sources. It does not capture the actual master output bus.
+- **Fader positions may not be reflected**: Audio is captured before OBS volume faders are applied.
+- **True Peak not implemented**: Uses Sample Peak only (Phase 1).
+- **Windows priority**: Built and tested primarily on Windows. macOS/Linux should work but are less tested.
 
-## Signing and Notarizing on macOS
+## Technical Notes
 
-Basic concepts of codesigning and notarization on macOS are explained in the correspodning [Wiki article](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS) which has a specific section for the [GitHub Actions setup](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS#setting-up-code-signing-for-github-actions).
+### Audio Processing
+
+- Audio is captured via `obs_source_add_audio_capture_callback()`
+- Lock-free SPSC queue transfers audio from callback to worker thread
+- LUFS calculation uses [libebur128](https://github.com/jiixyj/libebur128) (MIT license)
+- UI updates at 10 Hz via QTimer
+
+### Thread Model
+
+```
+Audio Thread (OBS) → Lock-free Queue → Worker Thread (LUFS) → Atomic Results → UI (10Hz)
+```
+
+### VAD Parameters
+
+- Attack time: 150 ms
+- Release time: 600 ms
+- Default threshold: -40 dBFS
+
+## License
+
+GPL-2.0 (same as OBS Studio)
+
+## Author
+
+AllegroMoltoV - https://www.allegromoltov.jp

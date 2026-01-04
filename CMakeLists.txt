@@ -4,12 +4,24 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCO
 
 project(${_name} VERSION ${_version} LANGUAGES C CXX)
 
-option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" OFF)
-option(ENABLE_QT "Use Qt functionality" OFF)
+option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
+option(ENABLE_QT "Use Qt functionality" ON)
 
 include(compilerconfig)
 include(defaults)
 include(helpers)
+
+# libebur128 for LUFS measurement (static linking)
+include(FetchContent)
+FetchContent_Declare(libebur128 GIT_REPOSITORY https://github.com/jiixyj/libebur128.git GIT_TAG v1.2.6)
+# Force static library build only
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(ENABLE_INTERNAL_QUEUE_H ON CACHE BOOL "" FORCE)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(libebur128)
+unset(CMAKE_POLICY_VERSION_MINIMUM CACHE)
+# Restore default for other targets
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
@@ -17,7 +29,10 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 
 find_package(libobs REQUIRED)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs ebur128)
+
+# Add libebur128 include directory
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${libebur128_SOURCE_DIR}/ebur128)
 
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
@@ -25,7 +40,7 @@ if(ENABLE_FRONTEND_API)
 endif()
 
 if(ENABLE_QT)
-  find_package(Qt6 COMPONENTS Widgets Core)
+  find_package(Qt6 REQUIRED COMPONENTS Widgets Core)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
   target_compile_options(
     ${CMAKE_PROJECT_NAME}
