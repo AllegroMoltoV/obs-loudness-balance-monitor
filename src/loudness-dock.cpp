@@ -52,7 +52,16 @@ LoudnessDock::~LoudnessDock()
 
 void LoudnessDock::setup_ui()
 {
-	auto *main_layout = new QVBoxLayout(this);
+	// Create scroll area for the entire dock content
+	auto *scroll_area = new QScrollArea(this);
+	scroll_area->setWidgetResizable(true);
+	scroll_area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	scroll_area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	scroll_area->setFrameShape(QFrame::NoFrame);
+
+	// Container widget for all content
+	auto *content_widget = new QWidget();
+	auto *main_layout = new QVBoxLayout(content_widget);
 	main_layout->setSpacing(8);
 	main_layout->setContentsMargins(8, 8, 8, 8);
 
@@ -247,8 +256,6 @@ void LoudnessDock::setup_ui()
 
 	// === Help Section ===
 	auto *help_group = new QGroupBox(obs_module_text("Help"));
-	help_group->setCheckable(true);
-	help_group->setChecked(false);
 	auto *help_layout = new QVBoxLayout(help_group);
 
 	auto *help_usage = new QLabel(obs_module_text("HelpUsage"));
@@ -273,8 +280,17 @@ void LoudnessDock::setup_ui()
 
 	main_layout->addWidget(help_group);
 
-	// Add stretch at bottom
-	main_layout->addStretch();
+	// Set the content widget in scroll area
+	scroll_area->setWidget(content_widget);
+
+	// Set the scroll area as the dock's main widget
+	auto *dock_layout = new QVBoxLayout(this);
+	dock_layout->setContentsMargins(0, 0, 0, 0);
+	dock_layout->addWidget(scroll_area);
+
+	// Set fixed width, variable height
+	setMinimumWidth(300);
+	setMaximumWidth(400);
 
 	// Connect signals
 	connect(voice_source_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
