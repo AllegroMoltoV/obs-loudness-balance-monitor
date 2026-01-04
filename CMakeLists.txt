@@ -20,6 +20,11 @@ set(ENABLE_INTERNAL_QUEUE_H ON CACHE BOOL "" FORCE)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(libebur128)
 unset(CMAKE_POLICY_VERSION_MINIMUM CACHE)
+# Disable warning-as-error for libebur128 (has #warning on non-SSE2 platforms)
+if(TARGET ebur128)
+  set_target_properties(ebur128 PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
+  target_compile_options(ebur128 PRIVATE $<$<C_COMPILER_ID:Clang,AppleClang,GNU>:-Wno-error>)
+endif()
 # Restore default for other targets
 set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 
