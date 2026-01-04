@@ -36,10 +36,10 @@
             "bundleId": "com.example.plugintemplate-for-obs"
         }
     },
-    "name": "plugintemplate-for-obs",
-    "displayName": "Plugin Template for OBS",
-    "version": "1.0.0",
-    "author": "Your Name Here",
-    "website": "https://example.com",
-    "email": "me@example.com"
+    "name": "loudness-balance-monitor",
+    "displayName": "音量バランスモニター",
+    "version": "0.1.0",
+    "author": "AllegroMoltoV",
+    "website": "https://www.allegromoltov.jp",
+    "email": "contact@allegromoltov.jp"
 }
