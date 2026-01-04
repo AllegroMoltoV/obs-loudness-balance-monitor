@@ -1,39 +1,104 @@
-# Loudness Balance Monitor (音量バランスモニター)
+# Loudness Balance Monitor
 
-OBS Studio plugin for real-time audio loudness monitoring. Detects when your voice is too quiet or buried in BGM during streaming.
+**OBS Studio 向けリアルタイム音量バランス監視プラグイン**
+
+配信中に「声がBGMに埋もれている」「全体の音量が小さい」といった問題を視覚的にフィードバックし、適切な音量バランスを維持するのを支援します。
+
+---
 
 ## Features
 
-- **Voice Activity Detection (VAD)**: Threshold-based detection with attack/release timing
-- **LUFS Measurement**: Short-term loudness (3-second window) using libebur128
-- **Balance Monitoring**: Voice-BGM delta with OK/WARN/BAD status indicators
-- **Mix Loudness**: Overall loudness level monitoring
-- **Peak/Clip Detection**: Sample peak monitoring to prevent clipping
-- **Qt Dock UI**: Integrated OBS dock with meters and status colors
+- **Voice Activity Detection (VAD)** - 声の有無を自動検出（しきい値調整可能）
+- **LUFS Measurement** - libebur128 による業界標準のラウドネス計測
+- **Balance Monitoring** - 声とBGMのバランスを OK/WARN/BAD で表示
+- **Mix Loudness** - 全体の音量レベル監視
+- **Peak/Clip Detection** - クリッピング（音割れ）検出
+- **Qt Dock UI** - OBS に統合されたドックウィジェット
+- **Localization** - 日本語 / English 対応
 
-## Build Requirements
+## Status Indicators
 
-| Platform | Tool |
-|----------|------|
-| Windows | Visual Studio 17 2022 |
-| macOS | XCode 16.0 |
-| Windows, macOS | CMake 3.30+ |
-| Ubuntu 24.04 | CMake 3.28+, ninja-build, pkg-config, build-essential |
+| Status | Balance (声-BGM) | Mix (全体音量) | Clip (ピーク) |
+|--------|------------------|----------------|---------------|
+| **OK** (緑) | +6 LU 以上 | -18 LUFS 以上 | -1 dBFS 未満 |
+| **WARN** (黄) | +3 〜 +6 LU | -22 〜 -18 LUFS | -1 〜 0 dBFS |
+| **BAD** (赤) | +3 LU 未満 | -22 LUFS 未満 | 0 dBFS 以上 |
 
-## Build Instructions (Windows)
+## Requirements
 
-```powershell
-# Configure
-cmake --preset windows-x64-local
+- OBS Studio 31.0.0+
+- Windows 10/11 (x64)
+- macOS 12.0+ (Universal: Intel + Apple Silicon)
+- Ubuntu 22.04+ / 24.04+ (x86_64)
 
-# Build and install
-cmake --build build_x64 --config RelWithDebInfo
+## Installation
+
+### Windows
+
+1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases) から ZIP をダウンロード
+2. OBS Studio を終了
+3. ZIP を展開し、中身を OBS のインストールフォルダにコピー
+4. OBS Studio を起動
+5. メニュー **ドック** → **音量バランスモニター** を有効化
+
+### macOS
+
+1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases) から PKG をダウンロード
+2. インストーラーを実行
+3. OBS Studio を起動
+4. メニュー **Docks** → **Loudness Balance Monitor** を有効化
+
+### Linux
+
+```bash
+sudo dpkg -i loudness-balance-monitor-*.deb
 ```
 
-The plugin will be automatically installed to `C:/ProgramData/obs-studio/plugins`.
+OBS Studio を起動し、**Docks** → **Loudness Balance Monitor** を有効化
 
-For other platforms:
+## Usage
+
+1. ドックで **声** ソース（マイク）を選択
+2. モニターしたい **BGM** ソースにチェック
+3. 配信中はステータスインジケーターを確認:
+   - **緑** = 良好
+   - **黄** = 注意
+   - **赤** = 問題あり
+
+### Settings
+
+| 設定 | 説明 |
+|------|------|
+| **VAD Threshold** | 音声検出のしきい値 (-60 〜 -20 dB) |
+| **Balance Target** | 目標バランス値 (0 〜 20 LU) |
+| **Mix Preset** | YouTube標準 / 小さめ安全 / 大きめ攻め |
+
+## Known Limitations
+
+- **Mix は推定値**: Voice + 選択BGMソースの合算です。OBS のマスター出力とは異なる場合があります
+- **フェーダー位置**: ソースのフェーダー位置は反映されない可能性があります
+- **True Peak**: 未実装（Sample Peak のみ）
+- **自動調整**: 音量の自動調整機能はありません（監視のみ）
+
+---
+
+## Building from Source
+
+### Requirements
+
+| Platform | Tools |
+|----------|-------|
+| Windows | Visual Studio 2022, CMake 3.28+ |
+| macOS | Xcode 16.0+, CMake 3.28+ |
+| Ubuntu | CMake 3.28+, ninja-build, pkg-config, build-essential |
+
+### Build
+
 ```bash
+# Windows
+cmake --preset windows-x64
+cmake --build build_x64 --config RelWithDebInfo
+
 # macOS
 cmake --preset macos
 cmake --build --preset macos --config RelWithDebInfo
@@ -43,58 +108,22 @@ cmake --preset ubuntu-x86_64
 cmake --build --preset ubuntu-x86_64 --config RelWithDebInfo
 ```
 
-## Usage
+### Technical Details
 
-1. Open OBS Studio
-2. Go to **Docks** menu and enable **Loudness Balance Monitor**
-3. In the dock:
-   - Select your **Voice** source (microphone)
-   - Check the **BGM** sources you want to monitor
-   - Adjust **VAD Threshold** if voice detection is too sensitive/insensitive
-   - Set **Balance Target** (default: +6 LU)
-   - Choose **Mix Preset** (YouTube Standard, Quiet/Safe, Loud/Aggressive)
-
-### Status Indicators
-
-| Status | Balance (Voice-BGM) | Mix Loudness | Clip |
-|--------|---------------------|--------------|------|
-| OK (Green) | >= +6 LU | >= -18 LUFS | < -1 dBFS |
-| WARN (Yellow) | +3 to +6 LU | -22 to -18 LUFS | -1 to 0 dBFS |
-| BAD (Red) | < +3 LU | < -22 LUFS | >= 0 dBFS |
-
-### Recommendations
-
-- Keep **Balance** at OK (green) so your voice is clearly audible over BGM
-- Keep **Mix** at OK to ensure your stream isn't too quiet for viewers
-- Avoid **Clip** warnings by reducing source volumes if peaks are too high
-
-## Known Limitations
-
-- **Mix is an estimate**: The plugin combines Voice + selected BGM sources. It does not capture the actual master output bus.
-- **Fader positions may not be reflected**: Audio is captured before OBS volume faders are applied.
-- **True Peak not implemented**: Uses Sample Peak only (Phase 1).
-- **Windows priority**: Built and tested primarily on Windows. macOS/Linux should work but are less tested.
-
-## Technical Notes
-
-### Audio Processing
-
-- Audio is captured via `obs_source_add_audio_capture_callback()`
-- Lock-free SPSC queue transfers audio from callback to worker thread
-- LUFS calculation uses [libebur128](https://github.com/jiixyj/libebur128) (MIT license)
-- UI updates at 10 Hz via QTimer
-
-### Thread Model
-
+**Thread Model:**
 ```
 Audio Thread (OBS) → Lock-free Queue → Worker Thread (LUFS) → Atomic Results → UI (10Hz)
 ```
 
-### VAD Parameters
-
-- Attack time: 150 ms
-- Release time: 600 ms
+**VAD Parameters:**
+- Attack: 150 ms
+- Release: 600 ms
 - Default threshold: -40 dBFS
+
+**Dependencies:**
+- [libebur128](https://github.com/jiixyj/libebur128) v1.2.6 (MIT License, statically linked)
+
+---
 
 ## License
 
@@ -102,4 +131,4 @@ GPL-2.0 (same as OBS Studio)
 
 ## Author
 
-AllegroMoltoV - https://www.allegromoltov.jp
+**AllegroMoltoV** - https://www.allegromoltov.jp
