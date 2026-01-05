@@ -53,6 +53,9 @@ private:
 	// Downmix stereo to mono
 	static void downmix_to_mono(const audio_data *audio, float *out, uint32_t frames);
 
+	// Apply volume multiplier to samples
+	static void apply_volume(float *samples, uint32_t frames, float volume);
+
 	// Reference to analyzer
 	LoudnessAnalyzer &analyzer_;
 

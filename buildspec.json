@@ -38,7 +38,7 @@
     },
     "name": "loudness-balance-monitor",
     "displayName": "音量バランスモニター",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "author": "AllegroMoltoV",
     "website": "https://www.allegromoltov.jp",
     "email": "contact@allegromoltov.jp"

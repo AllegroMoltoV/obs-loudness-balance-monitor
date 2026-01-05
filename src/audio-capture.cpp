@@ -185,8 +185,6 @@ void AudioCaptureManager::load_settings(obs_data_t *settings)
 
 void AudioCaptureManager::voice_audio_callback(void *param, obs_source_t *source, const audio_data *audio, bool muted)
 {
-	UNUSED_PARAMETER(source);
-
 	if (!param || !audio || !audio->data[0] || muted) {
 		return;
 	}
@@ -197,9 +195,15 @@ void AudioCaptureManager::voice_audio_callback(void *param, obs_source_t *source
 
 	auto *self = static_cast<AudioCaptureManager *>(param);
 
+	// Get volume fader value (0.0 to 1.0+)
+	float volume = obs_source_get_volume(source);
+
 	// Downmix to mono
 	downmix_buffer_.resize(audio->frames);
 	downmix_to_mono(audio, downmix_buffer_.data(), audio->frames);
+
+	// Apply volume fader
+	apply_volume(downmix_buffer_.data(), audio->frames, volume);
 
 	// Push to analyzer
 	self->analyzer_.push_voice_frame(downmix_buffer_.data(), audio->frames);
@@ -207,8 +211,6 @@ void AudioCaptureManager::voice_audio_callback(void *param, obs_source_t *source
 
 void AudioCaptureManager::bgm_audio_callback(void *param, obs_source_t *source, const audio_data *audio, bool muted)
 {
-	UNUSED_PARAMETER(source);
-
 	if (!param || !audio || !audio->data[0] || muted) {
 		return;
 	}
@@ -219,9 +221,15 @@ void AudioCaptureManager::bgm_audio_callback(void *param, obs_source_t *source, 
 
 	auto *self = static_cast<AudioCaptureManager *>(param);
 
+	// Get volume fader value (0.0 to 1.0+)
+	float volume = obs_source_get_volume(source);
+
 	// Downmix to mono
 	downmix_buffer_.resize(audio->frames);
 	downmix_to_mono(audio, downmix_buffer_.data(), audio->frames);
+
+	// Apply volume fader
+	apply_volume(downmix_buffer_.data(), audio->frames, volume);
 
 	// Push to analyzer
 	self->analyzer_.push_bgm_frame(downmix_buffer_.data(), audio->frames);
@@ -277,6 +285,18 @@ void AudioCaptureManager::downmix_to_mono(const audio_data *audio, float *out, u
 	} else {
 		// Already mono
 		std::memcpy(out, ch0, frames * sizeof(float));
+	}
+}
+
+void AudioCaptureManager::apply_volume(float *samples, uint32_t frames, float volume)
+{
+	// Skip if volume is 1.0 (no change needed)
+	if (volume == 1.0f) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < frames; ++i) {
+		samples[i] *= volume;
 	}
 }
 
