@@ -2,6 +2,7 @@
 #include "plugin-support.h"
 
 #include <obs-frontend-api.h>
+#include <util/platform.h>
 
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -532,6 +533,17 @@ QString LoudnessDock::status_to_style(Status status) const
 
 void LoudnessDock::save_settings()
 {
+	char *config_dir = obs_module_config_path(NULL);
+	if (!config_dir)
+		return;
+
+	if (os_mkdirs(config_dir) == MKDIR_ERROR) {
+		obs_log(LOG_ERROR, "Failed to create plugin config directory: %s", config_dir);
+		bfree(config_dir);
+		return;
+	}
+	bfree(config_dir);
+
 	char *path = obs_module_config_path("settings.json");
 	if (!path)
 		return;
@@ -546,7 +558,8 @@ void LoudnessDock::save_settings()
 	obs_data_set_double(settings, "balance_target", balance_target_spin_->value());
 	obs_data_set_int(settings, "mix_preset", mix_preset_combo_->currentIndex());
 
-	obs_data_save_json_safe(settings, path, "tmp", "bak");
+	if (!obs_data_save_json_safe(settings, path, "tmp", "bak"))
+		obs_log(LOG_ERROR, "Failed to save plugin settings: %s", path);
 	obs_data_release(settings);
 	bfree(path);
 }
