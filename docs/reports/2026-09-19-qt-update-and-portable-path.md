@@ -6,6 +6,7 @@
 
 - issue #1: 公式 OBS の Qt 依存パッケージを 2025-08-23 版へ更新した。以前 `AGL` のリンクエラーが出た macOS 26 の GitHub Actions で、Universal バイナリのリンクと配布用アーカイブの生成に成功した。CI で再現したリンク失敗は解消した。
 - issue #2: 隔離した OBS 32.1.2 ポータブル版は、`obs-plugins/64bit` へ置いたプラグイン v0.1.1 の DLL を読み込んだ。Computer Use でドック本体の日本語表示を確認した。正常終了時には設定ファイルの書き込みエラーが再現した。
+- 設定保存: 保存先ディレクトリの作成を追加したコミット `06f0959ad137cbbcc179cdf9f3904c118107d02f` は、macOS、Windows、Ubuntu の CI ビルドに成功した。Windows の DLL を隔離版へ配置し、正常終了後の設定ファイル作成、変更値の保存と再起動後の復元を確認した。
 
 ## issue #1: Qt 依存更新後の CI
 
@@ -31,8 +32,20 @@ Computer Use の `sky.list_apps()` と `sky.list_windows()` には、この PID 
 
 OBS の「ファイル」→「終了」から正常終了し、PID 1988 の消滅を確認した。終了ログは `os_quick_write_utf8_file_safe: failed to write to ../../config/obs-studio/plugin_config/loudness-balance-monitor/settings.json.tmp` を記録した。隔離版の `plugin_config` は存在したが、`loudness-balance-monitor` ディレクトリと `settings.json` は存在しなかった。前回のインストール済み OBS 32.2.2 でも同じ書き込みエラーが出ていた。`src/loudness-dock.cpp` の `save_settings()` は取得したパスへ保存する前にディレクトリを作成していない。この欠落が今回の書き込み失敗と整合する。完全なログはローカルの `.logs/issue-2-portable-gui-2026-09-19.log` に保存した。
 
-[OBS のプラグインガイド](https://obsproject.com/kb/plugins-guide)は `obs-plugins/64bit` へのバイナリ配置を旧方式とし、将来使えなくなる予定としている。この一例の成功だけで恒久的な推奨配置先とはしない。OBS 32.1 以降の音声ミキサーとの連携と音声解析は未確認である。設定は保存エラーが再現したため、修正後の保持確認が必要である。
+## 設定保存の修正ビルド
+
+隔離版の正常終了後、設定ファイルの存在と初期値 `balance_target=6.0` を検査した。ファイルが存在しないため検査は終了コード 1 で失敗した。OBS 31.1.1 の [`win-capture` の実装](https://github.com/obsproject/obs-studio/blob/31.1.1/plugins/win-capture/plugin-main.c#L117-L119)は、`obs_module_config_path(NULL)` で設定ディレクトリを求め、`os_mkdirs` で作成している。これに合わせて `src/loudness-dock.cpp` の `save_settings()` を修正し、既存ディレクトリを成功として扱い、作成と JSON 保存の失敗をログに残すようにした。
+
+[GitHub Actions #35445133669](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/actions/runs/35445133669)は修正コミット `06f0959ad137cbbcc179cdf9f3904c118107d02f` を対象に、macOS、Windows、Ubuntu の全ジョブで成功した。Windows 生成物 `loudness-balance-monitor-0.1.1-windows-x64.zip` の SHA-256 は `495111e3024c71fe0fe27503ecb78e431128b00d177a32a296c4d80e9c54aac3`。内部の DLL の SHA-256 は `dc72c96e33a0800436b64d91d6589ecb2927dc8b7ca4de3ee7bacaa1657f2cd9` だった。隔離版 OBS が停止中であることを確認し、旧 DLL を `.tmp/issue-2-portable/loudness-balance-monitor-v0.1.1-f6ecd5ce.dll` に退避した後、新 DLL のみを `obs-plugins/64bit` に配置してハッシュを再照合した。
+
+利用者が検証用ショートカットから隔離版を起動した。PID 28064 の実行ファイルパスと Computer Use の `window.app` は、どちらも隔離版の `bin/64bit/obs64.exe` を指した。プロセスのモジュール一覧でも隔離版の新 DLL を確認した。ドックを表示し、設定値を変えずに OBS のメニューから正常終了した。終了後に `settings.json` が作成され、JSON として解析でき、`balance_target` は初期値の 6.0 だった。これは修正前に失敗した先行検査が成功したことを示す。ローカルの `.logs/issue-2-settings-first-save-2026-09-19.log` には当該プラグインのロードとドック登録があり、前回の `settings.json.tmp` 書き込み失敗はなかった。
+
+2 回目の隔離版起動では、Computer Use でドックの目標バランス欄に 6.00 LU が表示された。これを 8.00 LU に変更して入力を確定し、OBS のメニューから正常終了した。終了後の `settings.json` は JSON として読め、`balance_target=8.0` だった。`.logs/issue-2-settings-changed-save-2026-09-19.log` には当該プラグインの書き込みエラーがない。
+
+3 回目の隔離版起動では、PID 26156 の実行ファイルパスと Computer Use の `window.app` が再び隔離版と一致した。ドックの目標バランス欄は 8.00 LU に復元されていた。設定を変えずに正常終了し、`settings.json` の `balance_target=8.0` が維持された。`.logs/issue-2-settings-restored-2026-09-19.log` にも当該プラグインの書き込みエラーはなかった。これにより、隔離した OBS 32.1.2 ポータブル版での設定作成、変更値の保存と次回起動時の復元を確認した。
+
+[OBS のプラグインガイド](https://obsproject.com/kb/plugins-guide)は `obs-plugins/64bit` へのバイナリ配置を旧方式とし、将来使えなくなる予定としている。この一例の成功だけで恒久的な推奨配置先とはしない。OBS 32.1 以降の音声ミキサーとの連携と音声解析は未確認である。
 
 ## 公開前に残る確認
 
-macOS 実機の OBS での読み込み、Windows ポータブル版の設定保存の修正と保持確認、OBS 32 系の音声動作を確認する。確認結果に合わせて README とリリース内容を確定する。GitHub issue への返信は利用者に文案を渡し、Codex は投稿しない。
+macOS 実機の OBS での読み込みと OBS 32 系の音声動作を確認する。Windows ポータブル版の設定保持は、隔離した OBS 32.1.2 で確認済みである。確認結果に合わせて README とリリース内容を確定する。GitHub issue への返信は利用者に文案を渡し、Codex は投稿しない。
