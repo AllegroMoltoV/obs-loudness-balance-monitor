@@ -8,6 +8,7 @@
 - [2026-09-19 issue #1・#2 の技術調査](reports/2026-09-19-issues.md)
 - [2026-09-19 macOS 26 ビルド検証](reports/2026-09-19-tahoe-ci.md)
 - [2026-09-19 issue #1・#2 の追加検証結果](reports/2026-09-19-validation-gates.md)
+- [2026-09-19 Qt 依存更新とポータブル版の追加検証](reports/2026-09-19-qt-update-and-portable-path.md)
 
 ## logs
 
