@@ -10,6 +10,7 @@
 - [2026-09-19 issue #1・#2 の追加検証結果](reports/2026-09-19-validation-gates.md)
 - [2026-09-19 Qt 依存更新とポータブル版の追加検証](reports/2026-09-19-qt-update-and-portable-path.md)
 - [2026-09-20 OBS 32.1.2 の音声動作とソース解放](reports/2026-09-20-obs-32-audio.md)
+- [2026-09-20 起動時のドック表示状態](reports/2026-09-20-dock-visibility.md)
 
 ## logs
 
