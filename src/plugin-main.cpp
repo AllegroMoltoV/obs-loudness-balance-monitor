@@ -4,7 +4,10 @@
 
 #include "loudness-dock.h"
 
+#include <QByteArray>
 #include <QMainWindow>
+
+#include <util/config-file.h>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -30,6 +33,22 @@ static void on_frontend_event(enum obs_frontend_event event, void *private_data)
 				g_dock = nullptr;
 			} else {
 				obs_log(LOG_INFO, "Dock registered successfully");
+
+				// OBS restores DockState before this event, then hides newly added docks.
+				config_t *user_config = obs_frontend_get_user_config();
+				if (user_config) {
+					const char *saved_state =
+						config_get_string(user_config, "BasicWindow", "DockState");
+					if (saved_state && *saved_state) {
+						QByteArray dock_state = QByteArray::fromBase64(QByteArray(saved_state));
+						if (main_window->restoreState(dock_state)) {
+							obs_log(LOG_INFO, "Restored OBS dock state after registration");
+						} else {
+							obs_log(LOG_WARNING,
+								"Failed to restore OBS dock state after registration");
+						}
+					}
+				}
 			}
 		}
 	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP && g_dock) {
