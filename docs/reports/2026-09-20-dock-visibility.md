@@ -6,7 +6,7 @@
 
 OBS 32.1.2 では、保存済みのドック配置を復元した後にプラグインのドックが登録される。登録 API がドックを非表示にするため、修正前は前回の表示状態が引き継がれなかった。
 
-`src/plugin-main.cpp` で、登録成功後に OBS が保存した `DockState` を再適用するようにした。隔離版 OBS 32.1.2 では、表示して正常終了した場合も、非表示で正常終了した場合も、次回起動時にその状態が復元された。対応 OS の CI ビルドは未実施である。
+`src/plugin-main.cpp` で、登録成功後に OBS が保存した `DockState` を再適用するようにした。隔離版 OBS 32.1.2 では、表示して正常終了した場合も、非表示で正常終了した場合も、次回起動時にその状態が復元された。Windows、macOS、Ubuntu の CI ビルドも成功した。
 
 ## 根拠
 
@@ -25,6 +25,7 @@ Qt の `restoreDockWidget()` は、`restoreState()` より後に作成したド�
 ## 検証結果
 
 - Windows の `cmake --preset windows-ci-x64 -DENABLE_POST_BUILD_INSTALL=OFF` と `cmake --build --preset windows-ci-x64` が成功した。既定のビルド設定では、コンパイル後の `C:\Program Files` へのインストールが権限不足で失敗したため、ローカル検証ではインストール処理を無効にした。整形検査と `git diff --check` も成功した。
+- [PR #5 の CI 実行 35484524073](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/actions/runs/35484524073) は、実装コミット `9b115af` を対象に Windows、macOS、Ubuntu のビルドとパッケージ作成、clang-format、gersemi の全ジョブが成功した。各 OS の OBS 画面での実行確認は CI に含まれない。
 - 修正版 DLL を `.tmp/issue-2-portable/obs-32.1.2` にのみ配置した。OBS ログ `2026-09-20 11-20-05.txt`、`11-22-07.txt`、`11-24-07.txt` には、ポータブルモードとドック登録・復元の成功が記録されている。いずれもメニューから正常終了し、メモリーリーク数は 0 だった。
 - 表示した状態で終了すると、再起動時に音量バランスモニターが表示された。声・BGM・ミックスの値はそれぞれ約 `-19.6`、`-26.6`、`-18.8 LUFS`、声と BGM の差は `+7.0 LU` と表示された。検証用音声ソースと OBS ミキサーも動作した。
 - 「ドック」メニューで非表示にして終了すると、再起動時も非表示だった。同メニューのチェックは外れており、再表示すると測定値が再び表示された。
