@@ -32,6 +32,10 @@ static void on_frontend_event(enum obs_frontend_event event, void *private_data)
 				obs_log(LOG_INFO, "Dock registered successfully");
 			}
 		}
+	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP && g_dock) {
+		g_dock->on_scene_collection_cleanup();
+	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED && g_dock) {
+		g_dock->on_scene_collection_changed();
 	}
 }
 

@@ -2,6 +2,7 @@
 #include "plugin-support.h"
 
 #include <obs-frontend-api.h>
+#include <util/platform.h>
 
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -48,6 +49,17 @@ LoudnessDock::~LoudnessDock()
 	capture_manager_.reset();
 	analyzer_->stop();
 	analyzer_.reset();
+}
+
+void LoudnessDock::on_scene_collection_cleanup()
+{
+	capture_manager_->detach_sources();
+}
+
+void LoudnessDock::on_scene_collection_changed()
+{
+	capture_manager_->reattach_sources();
+	refresh_source_lists();
 }
 
 void LoudnessDock::setup_ui()
@@ -307,8 +319,8 @@ void LoudnessDock::setup_ui()
 
 void LoudnessDock::refresh_source_lists()
 {
-	// Get current selection
-	QString current_voice = voice_source_combo_->currentText();
+	// Restore the saved selection after a scene collection without this source.
+	QString current_voice = QString::fromStdString(capture_manager_->voice_source_name());
 	std::vector<std::string> current_bgm = capture_manager_->bgm_source_names();
 
 	// Clear
@@ -346,7 +358,7 @@ void LoudnessDock::refresh_source_lists()
 	}
 
 	// Restore voice selection
-	int voice_idx = voice_source_combo_->findText(current_voice);
+	int voice_idx = voice_source_combo_->findData(current_voice);
 	if (voice_idx >= 0) {
 		voice_source_combo_->setCurrentIndex(voice_idx);
 	}
@@ -532,6 +544,17 @@ QString LoudnessDock::status_to_style(Status status) const
 
 void LoudnessDock::save_settings()
 {
+	char *config_dir = obs_module_config_path(NULL);
+	if (!config_dir)
+		return;
+
+	if (os_mkdirs(config_dir) == MKDIR_ERROR) {
+		obs_log(LOG_ERROR, "Failed to create plugin config directory: %s", config_dir);
+		bfree(config_dir);
+		return;
+	}
+	bfree(config_dir);
+
 	char *path = obs_module_config_path("settings.json");
 	if (!path)
 		return;
@@ -546,7 +569,8 @@ void LoudnessDock::save_settings()
 	obs_data_set_double(settings, "balance_target", balance_target_spin_->value());
 	obs_data_set_int(settings, "mix_preset", mix_preset_combo_->currentIndex());
 
-	obs_data_save_json_safe(settings, path, "tmp", "bak");
+	if (!obs_data_save_json_safe(settings, path, "tmp", "bak"))
+		obs_log(LOG_ERROR, "Failed to save plugin settings: %s", path);
 	obs_data_release(settings);
 	bfree(path);
 }
@@ -568,23 +592,6 @@ void LoudnessDock::load_settings()
 
 	// Refresh UI to show loaded sources
 	refresh_source_lists();
-
-	// Restore voice source selection in combo
-	QString voice_name = QString::fromStdString(capture_manager_->voice_source_name());
-	int voice_idx = voice_source_combo_->findData(voice_name);
-	if (voice_idx >= 0) {
-		voice_source_combo_->setCurrentIndex(voice_idx);
-	}
-
-	// Restore BGM checkboxes
-	auto bgm_names = capture_manager_->bgm_source_names();
-	for (auto *cb : bgm_checkboxes_) {
-		QString name = cb->property("source_name").toString();
-		bool selected = std::find(bgm_names.begin(), bgm_names.end(), name.toStdString()) != bgm_names.end();
-		cb->blockSignals(true);
-		cb->setChecked(selected);
-		cb->blockSignals(false);
-	}
 
 	// Load other settings
 	int vad_thresh = static_cast<int>(obs_data_get_int(settings, "vad_threshold"));

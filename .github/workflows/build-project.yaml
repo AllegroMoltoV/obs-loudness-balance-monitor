@@ -48,7 +48,7 @@ jobs:
               fi
               ;;
             workflow_dispatch)
-              config_data=('codesign:true' 'notarize:false' 'package:false' 'config:RelWithDebInfo')
+              config_data=('codesign:false' 'notarize:false' 'package:false' 'config:RelWithDebInfo')
               ;;
             schedule)
               config_data=('codesign:true' 'notarize:false' 'package:true' 'config:RelWithDebInfo')
@@ -73,7 +73,7 @@ jobs:
 
   macos-build:
     name: Build for macOS 🍏
-    runs-on: macos-15
+    runs-on: macos-26
     needs: check-event
     defaults:
       run:
@@ -90,8 +90,8 @@ jobs:
           : Set Up Environment 🔧
           if (( ${+RUNNER_DEBUG} )) setopt XTRACE
 
-          print '::group::Enable Xcode 16.1'
-          sudo xcode-select --switch /Applications/Xcode_16.1.0.app/Contents/Developer
+          print '::group::Enable Xcode 26.2'
+          sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
           print '::endgroup::'
 
           print '::group::Clean Homebrew Environment'

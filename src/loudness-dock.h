@@ -28,6 +28,8 @@ class LoudnessDock : public QWidget {
 public:
 	explicit LoudnessDock(QWidget *parent = nullptr);
 	~LoudnessDock() override;
+	void on_scene_collection_cleanup();
+	void on_scene_collection_changed();
 
 private slots:
 	void on_update_timer();

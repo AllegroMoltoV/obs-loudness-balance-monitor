@@ -38,19 +38,41 @@
 
 ### Windows（配布バイナリあり）
 
-1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases) から ZIP をダウンロード
-2. OBS Studio を終了
-3. ZIP を展開し、中身を **`%PROGRAMDATA%\obs-studio\plugins`** にコピー
+1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases) から `loudness-balance-monitor-0.1.2-windows-x64.zip` をダウンロードします。
+2. OBS Studio を終了し、ZIP を展開します。
+3. ZIP 内の `loudness-balance-monitor` フォルダーを `%PROGRAMDATA%\obs-studio\plugins` にコピーします。ZIP ルートの `include` と `lib` はインストールに使いません。
 
-   * 例: `C:\ProgramData\obs-studio\plugins`
-   * `ProgramData` は隠しフォルダーのため、エクスプローラーで「隠し項目」を表示してください
-4. OBS Studio を起動
-5. メニュー **ドック** → **音量バランスモニター** を有効化
+   ```text
+   C:\ProgramData\obs-studio\plugins\
+   └─ loudness-balance-monitor\
+      ├─ bin\64bit\loudness-balance-monitor.dll
+      └─ data\locale\
+         ├─ en-US.ini
+         └─ ja-JP.ini
+   ```
+
+   `ProgramData` は隠しフォルダーです。エクスプローラーで「隠し項目」を表示するか、アドレス欄に `%PROGRAMDATA%\obs-studio\plugins` を入力してください。
+4. OBS Studio を起動し、メニューの **ドック** → **音量バランスモニター** からドックを表示します。現行版では OBS を起動するたびに、この操作が必要です ([issue #3](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/issues/3))。
+
+#### ポータブル版 OBS 32.1.2 で確認した配置
+
+隔離した Windows ポータブル版 OBS 32.1.2 では、次の配置でプラグインの読み込み、音声表示、設定の復元を確認しました。OBS の展開先を基準に、ZIP 内の DLL と言語ファイルをそれぞれコピーします。
+
+```text
+<OBS の展開先>\
+├─ obs-plugins\64bit\loudness-balance-monitor.dll
+└─ data\obs-plugins\loudness-balance-monitor\locale\
+   ├─ en-US.ini
+   └─ ja-JP.ini
+```
+
+[OBS のプラグインガイド](https://obsproject.com/kb/plugins-guide)は、この配置を将来廃止予定の旧方式としています。同ガイドにある `data/plugins` への配置だけでは、今回の OBS 32.1.2 と配布済み v0.1.1 DLL の組み合わせは読み込まれませんでした。上記の動作確認は OBS 32.1.2 に限られます。
 
 ### macOS（要ビルド）
 
 現在、Releases では macOS 向けのビルド済みバイナリは配布していません。
 **Building from Source** を参照してビルドし、生成物を OBS のプラグインフォルダーへ配置してください。
+macOS 26 の CI ではビルドに成功しましたが、macOS 実機の OBS への読み込みと音声動作は未確認です。
 
 ### Linux（要ビルド）
 

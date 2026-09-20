@@ -39,7 +39,16 @@ public:
 	void save_settings(obs_data_t *settings) const;
 	void load_settings(obs_data_t *settings);
 
+	// Release selected sources before OBS checks scene collection cleanup.
+	void detach_sources();
+	void reattach_sources();
+
 private:
+	struct BGMSource {
+		std::string name;
+		obs_source_t *source{nullptr};
+	};
+
 	// Audio capture callbacks (static for OBS API)
 	static void voice_audio_callback(void *param, obs_source_t *source, const audio_data *audio, bool muted);
 	static void bgm_audio_callback(void *param, obs_source_t *source, const audio_data *audio, bool muted);
@@ -47,6 +56,8 @@ private:
 	// Internal helpers
 	void register_voice_callback();
 	void unregister_voice_callback();
+	void attach_bgm_source(BGMSource &bgm);
+	void release_bgm_source(BGMSource &bgm);
 	void register_bgm_callback(obs_source_t *source);
 	void unregister_bgm_callback(obs_source_t *source);
 
@@ -64,10 +75,6 @@ private:
 	obs_source_t *voice_source_{nullptr};
 
 	// BGM sources
-	struct BGMSource {
-		std::string name;
-		obs_source_t *source{nullptr};
-	};
 	std::vector<BGMSource> bgm_sources_;
 
 	// Mutex for source management (not audio callback)
