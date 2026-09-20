@@ -59,10 +59,7 @@ void AudioCaptureManager::add_bgm_source(const std::string &source_name)
 		it = std::prev(bgm_sources_.end());
 	}
 
-	if (!it->source) {
-		it->source = obs_get_source_by_name(source_name.c_str());
-		register_bgm_callback(it->source);
-	}
+	attach_bgm_source(*it);
 }
 
 void AudioCaptureManager::remove_bgm_source(const std::string &source_name)
@@ -73,10 +70,7 @@ void AudioCaptureManager::remove_bgm_source(const std::string &source_name)
 			       [&source_name](const BGMSource &bgm) { return bgm.name == source_name; });
 
 	if (it != bgm_sources_.end()) {
-		if (it->source) {
-			obs_source_remove_audio_capture_callback(it->source, bgm_audio_callback, this);
-			obs_source_release(it->source);
-		}
+		release_bgm_source(*it);
 		bgm_sources_.erase(it);
 	}
 }
@@ -86,10 +80,7 @@ void AudioCaptureManager::clear_bgm_sources()
 	std::lock_guard<std::mutex> lock(mutex_);
 
 	for (auto &bgm : bgm_sources_) {
-		if (bgm.source) {
-			obs_source_remove_audio_capture_callback(bgm.source, bgm_audio_callback, this);
-			obs_source_release(bgm.source);
-		}
+		release_bgm_source(bgm);
 	}
 	bgm_sources_.clear();
 }
@@ -180,11 +171,7 @@ void AudioCaptureManager::detach_sources()
 	std::lock_guard<std::mutex> lock(mutex_);
 	unregister_voice_callback();
 	for (auto &bgm : bgm_sources_) {
-		if (bgm.source) {
-			unregister_bgm_callback(bgm.source);
-			obs_source_release(bgm.source);
-			bgm.source = nullptr;
-		}
+		release_bgm_source(bgm);
 	}
 }
 
@@ -195,10 +182,7 @@ void AudioCaptureManager::reattach_sources()
 		register_voice_callback();
 	}
 	for (auto &bgm : bgm_sources_) {
-		if (!bgm.source) {
-			bgm.source = obs_get_source_by_name(bgm.name.c_str());
-			register_bgm_callback(bgm.source);
-		}
+		attach_bgm_source(bgm);
 	}
 }
 
@@ -274,6 +258,23 @@ void AudioCaptureManager::unregister_voice_callback()
 		obs_source_remove_audio_capture_callback(voice_source_, voice_audio_callback, this);
 		obs_source_release(voice_source_);
 		voice_source_ = nullptr;
+	}
+}
+
+void AudioCaptureManager::attach_bgm_source(BGMSource &bgm)
+{
+	if (!bgm.source) {
+		bgm.source = obs_get_source_by_name(bgm.name.c_str());
+		register_bgm_callback(bgm.source);
+	}
+}
+
+void AudioCaptureManager::release_bgm_source(BGMSource &bgm)
+{
+	if (bgm.source) {
+		unregister_bgm_callback(bgm.source);
+		obs_source_release(bgm.source);
+		bgm.source = nullptr;
 	}
 }
 

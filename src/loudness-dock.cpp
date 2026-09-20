@@ -593,23 +593,6 @@ void LoudnessDock::load_settings()
 	// Refresh UI to show loaded sources
 	refresh_source_lists();
 
-	// Restore voice source selection in combo
-	QString voice_name = QString::fromStdString(capture_manager_->voice_source_name());
-	int voice_idx = voice_source_combo_->findData(voice_name);
-	if (voice_idx >= 0) {
-		voice_source_combo_->setCurrentIndex(voice_idx);
-	}
-
-	// Restore BGM checkboxes
-	auto bgm_names = capture_manager_->bgm_source_names();
-	for (auto *cb : bgm_checkboxes_) {
-		QString name = cb->property("source_name").toString();
-		bool selected = std::find(bgm_names.begin(), bgm_names.end(), name.toStdString()) != bgm_names.end();
-		cb->blockSignals(true);
-		cb->setChecked(selected);
-		cb->blockSignals(false);
-	}
-
 	// Load other settings
 	int vad_thresh = static_cast<int>(obs_data_get_int(settings, "vad_threshold"));
 	if (vad_thresh != 0) {
