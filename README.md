@@ -38,7 +38,7 @@
 
 ### Windows（配布バイナリあり）
 
-1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases) から `loudness-balance-monitor-0.1.2-windows-x64.zip` をダウンロードします。
+1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases) から `loudness-balance-monitor-0.1.3-windows-x64.zip` をダウンロードします。
 2. OBS Studio を終了し、ZIP を展開します。
 3. ZIP 内の `loudness-balance-monitor` フォルダーを `%PROGRAMDATA%\obs-studio\plugins` にコピーします。ZIP ルートの `include` と `lib` はインストールに使いません。
 
@@ -52,7 +52,7 @@
    ```
 
    `ProgramData` は隠しフォルダーです。エクスプローラーで「隠し項目」を表示するか、アドレス欄に `%PROGRAMDATA%\obs-studio\plugins` を入力してください。
-4. OBS Studio を起動し、メニューの **ドック** → **音量バランスモニター** からドックを表示します。現行版では OBS を起動するたびに、この操作が必要です ([issue #3](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/issues/3))。
+4. OBS Studio を起動し、初回はメニューの **ドック** → **音量バランスモニター** からドックを表示します。次回以降は、OBS の正常終了時に保存されたドックの表示状態を復元します。
 
 #### ポータブル版 OBS 32.1.2 で確認した配置
 
