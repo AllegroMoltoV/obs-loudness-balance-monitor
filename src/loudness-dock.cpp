@@ -51,6 +51,17 @@ LoudnessDock::~LoudnessDock()
 	analyzer_.reset();
 }
 
+void LoudnessDock::on_scene_collection_cleanup()
+{
+	capture_manager_->detach_sources();
+}
+
+void LoudnessDock::on_scene_collection_changed()
+{
+	capture_manager_->reattach_sources();
+	refresh_source_lists();
+}
+
 void LoudnessDock::setup_ui()
 {
 	// Create scroll area for the entire dock content
@@ -308,8 +319,8 @@ void LoudnessDock::setup_ui()
 
 void LoudnessDock::refresh_source_lists()
 {
-	// Get current selection
-	QString current_voice = voice_source_combo_->currentText();
+	// Restore the saved selection after a scene collection without this source.
+	QString current_voice = QString::fromStdString(capture_manager_->voice_source_name());
 	std::vector<std::string> current_bgm = capture_manager_->bgm_source_names();
 
 	// Clear
@@ -347,7 +358,7 @@ void LoudnessDock::refresh_source_lists()
 	}
 
 	// Restore voice selection
-	int voice_idx = voice_source_combo_->findText(current_voice);
+	int voice_idx = voice_source_combo_->findData(current_voice);
 	if (voice_idx >= 0) {
 		voice_source_combo_->setCurrentIndex(voice_idx);
 	}

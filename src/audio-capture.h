@@ -39,6 +39,10 @@ public:
 	void save_settings(obs_data_t *settings) const;
 	void load_settings(obs_data_t *settings);
 
+	// Release scene-owned sources before OBS clears a scene collection.
+	void detach_sources();
+	void reattach_sources();
+
 private:
 	// Audio capture callbacks (static for OBS API)
 	static void voice_audio_callback(void *param, obs_source_t *source, const audio_data *audio, bool muted);

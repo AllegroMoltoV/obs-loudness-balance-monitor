@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 
 namespace lbm {
 
@@ -12,16 +13,7 @@ AudioCaptureManager::AudioCaptureManager(LoudnessAnalyzer &analyzer) : analyzer_
 
 AudioCaptureManager::~AudioCaptureManager()
 {
-	unregister_voice_callback();
-
-	std::lock_guard<std::mutex> lock(mutex_);
-	for (auto &bgm : bgm_sources_) {
-		if (bgm.source) {
-			obs_source_remove_audio_capture_callback(bgm.source, bgm_audio_callback, this);
-			obs_source_release(bgm.source);
-		}
-	}
-	bgm_sources_.clear();
+	detach_sources();
 }
 
 void AudioCaptureManager::set_voice_source(const std::string &source_name)
@@ -29,6 +21,9 @@ void AudioCaptureManager::set_voice_source(const std::string &source_name)
 	std::lock_guard<std::mutex> lock(mutex_);
 
 	if (voice_source_name_ == source_name) {
+		if (!voice_source_) {
+			register_voice_callback();
+		}
 		return;
 	}
 
@@ -51,26 +46,23 @@ bool AudioCaptureManager::has_voice_source() const
 
 void AudioCaptureManager::add_bgm_source(const std::string &source_name)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
-
-	// Check if already added
-	for (const auto &bgm : bgm_sources_) {
-		if (bgm.name == source_name) {
-			return;
-		}
-	}
-
-	obs_source_t *source = obs_get_source_by_name(source_name.c_str());
-	if (!source) {
+	if (source_name.empty()) {
 		return;
 	}
 
-	BGMSource bgm;
-	bgm.name = source_name;
-	bgm.source = source;
+	std::lock_guard<std::mutex> lock(mutex_);
 
-	obs_source_add_audio_capture_callback(source, bgm_audio_callback, this);
-	bgm_sources_.push_back(bgm);
+	auto it = std::find_if(bgm_sources_.begin(), bgm_sources_.end(),
+			       [&source_name](const BGMSource &bgm) { return bgm.name == source_name; });
+	if (it == bgm_sources_.end()) {
+		bgm_sources_.push_back({source_name, nullptr});
+		it = std::prev(bgm_sources_.end());
+	}
+
+	if (!it->source) {
+		it->source = obs_get_source_by_name(source_name.c_str());
+		register_bgm_callback(it->source);
+	}
 }
 
 void AudioCaptureManager::remove_bgm_source(const std::string &source_name)
@@ -180,6 +172,33 @@ void AudioCaptureManager::load_settings(obs_data_t *settings)
 			obs_data_release(item);
 		}
 		obs_data_array_release(bgm_array);
+	}
+}
+
+void AudioCaptureManager::detach_sources()
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	unregister_voice_callback();
+	for (auto &bgm : bgm_sources_) {
+		if (bgm.source) {
+			unregister_bgm_callback(bgm.source);
+			obs_source_release(bgm.source);
+			bgm.source = nullptr;
+		}
+	}
+}
+
+void AudioCaptureManager::reattach_sources()
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	if (!voice_source_) {
+		register_voice_callback();
+	}
+	for (auto &bgm : bgm_sources_) {
+		if (!bgm.source) {
+			bgm.source = obs_get_source_by_name(bgm.name.c_str());
+			register_bgm_callback(bgm.source);
+		}
 	}
 }
 
