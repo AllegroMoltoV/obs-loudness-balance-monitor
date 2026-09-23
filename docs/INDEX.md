@@ -12,8 +12,8 @@
 - [2026-09-20 OBS 32.1.2 の音声動作とソース解放](reports/2026-09-20-obs-32-audio.md)
 - [2026-09-20 起動時のドック表示状態](reports/2026-09-20-dock-visibility.md)
 - [2026-09-20 v0.1.2 の公開前ビルド検証](reports/2026-09-20-v012-build.md)
-- [2026-09-20 v0.1.2 の公開結果と OBS Forum の承認待ち](reports/2026-09-20-v012-publish.md)
-- [2026-09-20 v0.1.3 の配布と OBS Forum の承認待ち](reports/2026-09-20-v013-publish.md)
+- [2026-09-20 v0.1.2 の公開結果と OBS Forum 更新](reports/2026-09-20-v012-publish.md)
+- [2026-09-20 v0.1.3 の配布と OBS Forum 更新](reports/2026-09-20-v013-publish.md)
 - [2026-09-22 OBS Forum の AI 利用開示要件](reports/2026-09-22-obs-forum-ai-disclosure.md)
 
 ## logs

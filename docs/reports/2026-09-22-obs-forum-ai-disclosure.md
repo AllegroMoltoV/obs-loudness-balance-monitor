@@ -1,6 +1,8 @@
 # OBS Forum の AI 利用開示要件
 
-確認日: 2026-09-22
+初回確認日: 2026-09-22
+
+最終確認日: 2026-09-23
 
 ## 結論
 
@@ -46,13 +48,13 @@ AI 利用開示の義務は 2026-01-20 にポリシーへ追加され、2026-07-
 
 2026-09-22 に、3 件の README と OBS Forum 説明へ日英の AI 利用開示を追加した。README は [Loudness Balance Monitor PR #8](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/pull/8)、[Simple Drop Shadow PR #2](https://github.com/AllegroMoltoV/obs-simple-drop-shadow/pull/2)、[Simple Pitch Shift PR #2](https://github.com/AllegroMoltoV/obs-simple-pitchshift/pull/2)で `main` へ反映した。3 件の `main` ruleset は、承認要件を含む規則を保持した `active` 状態である。
 
-OBS Forum の保存結果と一般公開状態は次のとおりである。
+OBS Forum の保存結果と一般公開状態は次のとおりである。2026-09-23 に 3 件の承認反映を確認した。
 
-- Loudness Balance Monitor: 所有者画面で開示文と `Awaiting approval before being displayed publicly.` を確認した。ログイン情報を付けない取得ではリソースページが 404 となり、一般公開前である。管理者 DM へ開示追加と再審査依頼を送信済みで、管理者からの追加返信はない。
-- Simple Drop Shadow: 開示文が一般公開ページに表示されている。ログイン情報を付けない取得でも日本語と英語の開示文を確認した。
-- Simple Pitch Shift: 所有者画面で開示文と `Awaiting approval before being displayed publicly.` を確認した。ログイン情報を付けない取得ではリソースページが 404 となり、一般公開前である。
+- Loudness Balance Monitor: 日本語と英語の開示文がリソース概要に表示されている。管理者 DM へ開示追加と再審査依頼を送信済みで、追加依頼はない。
+- Simple Drop Shadow: 日本語と英語の開示文がリソース概要に表示されている。
+- Simple Pitch Shift: 日本語と英語の開示文がリソース概要に表示されている。
 
-Loudness Balance Monitor の v0.1.2 更新文もモデレーター承認待ちであり、v0.1.3 の版履歴と更新文は未登録である。Loudness Balance Monitor と Simple Pitch Shift の公開結果、および Loudness Balance Monitor の版履歴更新は、モデレーター判断後に確認する。
+AI 利用開示に対する 3 件の再審査対応は完了した。Loudness Balance Monitor の v0.1.2 更新文も承認済みである。v0.1.3 の版履歴と更新文は 2026-09-23 に登録した。v0.1.3 の更新文だけが新しいモデレーター承認待ちであり、AI 利用開示の審査とは分けて追跡する。
 
 ## 文章構造
 
