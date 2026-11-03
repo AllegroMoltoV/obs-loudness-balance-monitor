@@ -1,0 +1,53 @@
+name: Preview probe
+on:
+  push:
+    branches: [codex/record-preview-probe]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-26, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux audio dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pulseaudio pulseaudio-utils
+      - name: Configure
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            cmake -S tests/preview -B probe-build '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+          else
+            cmake -S tests/preview -B probe-build
+          fi
+      - name: Build
+        run: cmake --build probe-build --config Release
+      - name: Common recording tests
+        run: ctest --test-dir probe-build -C Release --output-on-failure
+      - name: macOS audio inventory
+        if: runner.os == 'macOS'
+        run: |
+          lipo -info probe-build/lbm-preview
+          system_profiler SPAudioDataType -json > macos-audio-inventory.json
+          echo "macOS device playback not executed; inventory is not a playback pass."
+      - name: Linux finite playback
+        if: runner.os == 'Linux'
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          python3 tests/preview/linux-test.py probe-build/lbm-preview
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preview-probe-${{ runner.os }}
+          path: |
+            probe-build/Testing/Temporary/LastTest.log
+            macos-audio-inventory.json
+            linux-results.json
+            *-natural.f32
+            *-cancel.f32

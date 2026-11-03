@@ -27,3 +27,6 @@
 /cmake/.CMakeBuildNumber
 
 .docs
+
+# Isolated preview verification
+!/tests
