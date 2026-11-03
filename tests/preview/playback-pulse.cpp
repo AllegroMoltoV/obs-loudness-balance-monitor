@@ -67,7 +67,8 @@ int playback(const std::vector<float>& pcm, uint32_t rate, const std::string& de
     pa_buffer_attr attr;
     attr.maxlength = static_cast<uint32_t>(-1);
     attr.tlength = rate * 8 / 10;
-    attr.prebuf = 0;
+    // Finite playback must stop at the queued tail instead of advancing through silence.
+    attr.prebuf = static_cast<uint32_t>(-1);
     attr.minreq = static_cast<uint32_t>(-1);
     attr.fragsize = static_cast<uint32_t>(-1);
     const auto flags = static_cast<pa_stream_flags_t>(PA_STREAM_START_CORKED | PA_STREAM_DONT_MOVE);
@@ -78,6 +79,8 @@ int playback(const std::vector<float>& pcm, uint32_t rate, const std::string& de
     }
     const char* actual = pa_stream_get_device_name(p.stream);
     if (!actual || device != actual) { std::cerr << "requested sink was not selected\n"; return 2; }
+    const auto* actual_attr = pa_stream_get_buffer_attr(p.stream);
+    std::cout << "prebuf=" << actual_attr->prebuf << " tlength=" << actual_attr->tlength << "\n";
     const size_t total = pcm.size() * sizeof(float);
     size_t sent = 0;
     bool started = false;
@@ -131,7 +134,7 @@ int playback(const std::vector<float>& pcm, uint32_t rate, const std::string& de
     if (pa_stream_get_state(p.stream) == PA_STREAM_READY && pa_stream_disconnect(p.stream) < 0) {
         std::cerr << "stream disconnect failed\n"; result = 2;
     }
-    std::cout << "submitted_bytes=" << sent << " expected_bytes=" << total << " drain_success=" << drained.success << '\n';
+    std::cout << "submitted_bytes=" << sent << " expected_bytes=" << total << " drain_called=" << drained.called << " drain_success=" << drained.success << '\n';
     if (result == 0 && sent != total) return 2;
     return result;
 }
