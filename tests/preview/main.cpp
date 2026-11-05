@@ -9,6 +9,9 @@ static void interrupt_handler(int) { interrupted = 1; }
 int main(int argc, char** argv)
 {
     try {
+#ifdef __APPLE__
+        if (argc == 2 && std::strcmp(argv[1], "--apple-virtual-output-uid") == 0) return apple_virtual_output_uid();
+#endif
         if (argc < 5 || argc > 6 || std::strcmp(argv[1], "--play") != 0) {
             std::cerr << "Usage: lbm-preview --play pcm-f32le-stereo.raw 44100|48000 explicit-device [cancel-ms]\n";
             return 2;

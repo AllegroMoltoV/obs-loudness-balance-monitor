@@ -35,16 +35,56 @@ static bool device_matches(AudioDeviceID id, CFStringRef wanted)
     bytes = 0;
     return AudioObjectGetPropertyDataSize(id, &addr, 0, nullptr, &bytes) == noErr && bytes > 0;
 }
-static AudioDeviceID find_device(CFStringRef wanted)
+static std::vector<AudioDeviceID> list_devices()
 {
     AudioObjectPropertyAddress addr{kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
     UInt32 bytes = 0;
-    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addr, 0, nullptr, &bytes) != noErr || bytes == 0) return kAudioObjectUnknown;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addr, 0, nullptr, &bytes) != noErr || !bytes) return {};
     std::vector<AudioDeviceID> devices(bytes / sizeof(AudioDeviceID));
-    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &bytes, devices.data()) != noErr) return kAudioObjectUnknown;
-    for (size_t i = 0; i < bytes / sizeof(AudioDeviceID); ++i)
-        if (device_matches(devices[i], wanted)) return devices[i];
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &bytes, devices.data()) != noErr) return {};
+    devices.resize(bytes / sizeof(AudioDeviceID));
+    return devices;
+}
+static AudioDeviceID find_device(CFStringRef wanted)
+{
+    for (AudioDeviceID id : list_devices())
+        if (device_matches(id, wanted)) return id;
     return kAudioObjectUnknown;
+}
+static CFStringRef device_string(AudioDeviceID id, AudioObjectPropertySelector selector)
+{
+    AudioObjectPropertyAddress addr{selector, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+    CFStringRef text = nullptr;
+    UInt32 bytes = sizeof(text);
+    if (AudioObjectGetPropertyData(id, &addr, 0, nullptr, &bytes, &text) != noErr) return nullptr;
+    return text;
+}
+int apple_virtual_output_uid()
+{
+    std::vector<std::string> matches;
+    for (AudioDeviceID id : list_devices()) {
+        CFStringRef name = device_string(id, kAudioObjectPropertyName);
+        if (!name) continue;
+        bool target = CFEqual(name, CFSTR("Apple Virtual Sound Device"));
+        CFRelease(name);
+        if (!target) continue;
+        CFStringRef uid = device_string(id, kAudioDevicePropertyDeviceUID);
+        if (!uid) return 2;
+        if (device_matches(id, uid)) {
+            const auto capacity = CFStringGetMaximumSizeForEncoding(CFStringGetLength(uid), kCFStringEncodingUTF8) + 1;
+            std::vector<char> encoded(capacity);
+            bool converted = CFStringGetCString(uid, encoded.data(), capacity, kCFStringEncodingUTF8);
+            if (!converted) { CFRelease(uid); return 2; }
+            matches.emplace_back(encoded.data());
+        }
+        CFRelease(uid);
+    }
+    if (matches.size() != 1 || matches.front().empty()) {
+        std::cerr << "Expected one active Apple Virtual Sound Device output, found " << matches.size() << '\n';
+        return 2;
+    }
+    std::cout << matches.front() << '\n';
+    return 0;
 }
 static void refill(void* data, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {

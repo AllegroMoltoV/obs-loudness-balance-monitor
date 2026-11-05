@@ -30,12 +30,12 @@ jobs:
         run: cmake --build probe-build --config Release
       - name: Common recording tests
         run: ctest --test-dir probe-build -C Release --output-on-failure
-      - name: macOS audio inventory
+      - name: macOS virtual output playback
         if: runner.os == 'macOS'
         run: |
           lipo -info probe-build/lbm-preview
           system_profiler SPAudioDataType -json > macos-audio-inventory.json
-          echo "macOS device playback not executed; inventory is not a playback pass."
+          python3 tests/preview/macos-test.py probe-build/lbm-preview
       - name: Linux finite playback
         if: runner.os == 'Linux'
         run: |
@@ -49,6 +49,7 @@ jobs:
           path: |
             probe-build/Testing/Temporary/LastTest.log
             macos-audio-inventory.json
+            macos-results.json
             *linux-results.json
             *-natural.f32
             *-cancel.f32
