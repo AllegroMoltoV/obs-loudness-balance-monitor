@@ -16,7 +16,7 @@
 
 macOSにはC++17コンパイラー、CMake、Apple SDKが必要である。LinuxにはC++17コンパイラー、CMake、pkg-config、libpulseの開発ヘッダーとライブラリー、接続可能なPulseAudio互換サーバーが必要である。環境導入を自動実行しない。
 
-以下は対象OSでの準備用コマンドである。本作業では実行していない。プロジェクトルートから構成する。
+以下は対象OSでのビルドコマンドである。CIでmacOS/Linuxのビルドを確認済み。プロジェクトルートから構成する。
 
 ```sh
 cmake -S tests/preview -B tests/preview/build
@@ -37,13 +37,13 @@ tests/preview/build/lbm-preview --play /absolute/path/five-seconds.raw 48000 exp
 
 macOSでは指定UIDの出力能力と生存状態を確認してAudioQueueへ設定する。コールバックを呼出し元run loopで実行し、固定PCMを順に投入する。全PCM投入後に`AudioQueueStop(false)`を要求し、`kAudioQueueProperty_IsRunning`の停止を確認した後に破棄する。取消しと失敗時には供給を停止し、`AudioQueueStop(true)`と同期Disposeへ進む。再生中に指定デバイスのUID・生存状態・出力能力を再確認する。
 
-Linuxでは`PA_STREAM_DONT_MOVE`と正式sink名で接続し、実際の接続名を照合する。`prebuf=0`で短い末尾を待機させず、全PCM提出後の`pa_stream_drain`コールバック成功を自然終端の条件にする。取消しでは未完了operationを取消し、cork、flush、disconnectへ進む。サーバーやstreamの失敗、sink名の変更を失敗として扱う。休止中sinkの自動復帰を妨げないため、休止表示だけで即時失敗にしない。
+Linuxでは`PA_STREAM_DONT_MOVE`と正式sink名で接続し、実際の接続名を照合する。既定のprebufを使用し、有限音声が尽きた後の無音供給継続を避ける。全PCM提出後の`pa_stream_drain`コールバック成功を自然終端の条件にする。取消しでは未完了operationを取消し、cork、flush、disconnectへ進む。サーバーやstreamの失敗、sink名の変更を失敗として扱う。休止中sinkの自動復帰を妨げないため、休止表示だけで即時失敗にしない。
 
 Linuxの接続待機期限は10秒、再生処理の監視期限は20秒、個別operation待機は3秒である。取消し後のcorkとflushはそれぞれ最大3秒を待つ。macOSの再生処理にも20秒の監視期限を設ける。これらは試作が待機し続ける状況を検出する監視値であり、製品性能要件ではない。OSの同期API内部の停止やスケジューリング遅延を強制中断する期限ではない。
 
 ## 検証状況と残る制約
 
-ソースの読戻しと有限終端・取消し・デバイス消失・待機期限の机上レビューを実施した。macOS/Linuxでのコンパイル、実再生、再収録、端数一致、デバイス切断、取消し、停止直後の再試行は未実施である。利用可能なMac実機を確認できていない。WSL Ubuntuは存在するがC++コンパイラーとlibpulse開発環境を確認できていない。サーバーとデバイスの存在を未確認のまま成功扱いしない。
+CI41735512003で3OSの共通録音試験とmacOS/Linux再生試作のビルドが成功した。macOSはUniversal生成までで、実再生は未実施。Linuxの仮想出力では修正版44.1kHzの5秒全PCM一致と自然終了に成功した。次の1秒取消では終了コード3を得たが、取得音声が無音で検証不成立となり停止した。修正版48kHzは未到達。物理出力、機器消失、停止直後の再試行、OBSとの結合を未検証。
 
 実機検証では44,100 Hzと48,000 Hzの自然終端、取消し、無効デバイス、再生途中の切断、同一入力の反復を測定する。各OSの戻りPCMを別経路で捕捉し、末尾欠落・重複・停止後残音・次回録音への混入を確認する。API上の停止完了だけでは機器の残音消失や、次回録音への混入防止を保証しない。macOSのデバイス監視はポーリングであり、切断直後の経路変化を即時検知する保証もない。出力先固定と消失時動作の実測が必要である。
 

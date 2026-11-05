@@ -15,8 +15,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
       - name: Linux audio dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpulse-dev pulseaudio pulseaudio-utils
@@ -43,9 +41,6 @@ jobs:
         run: |
           pulseaudio --start --exit-idle-time=-1
           pulseaudio --version
-          git show 94d1550b63716f0abc64a5ae3155607e376bc794:tests/preview/playback-pulse.cpp > probe-build/baseline-pulse.cpp
-          c++ -std=c++17 -Itests/preview tests/preview/main.cpp probe-build/baseline-pulse.cpp -lpulse -pthread -o probe-build/baseline-preview
-          python3 tests/preview/linux-test.py probe-build/baseline-preview --observe
           python3 tests/preview/linux-test.py probe-build/lbm-preview
       - uses: actions/upload-artifact@v4
         if: always()
