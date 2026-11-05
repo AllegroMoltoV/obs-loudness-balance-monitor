@@ -51,7 +51,7 @@ def run_case(rate, sink, path, data, mode):
 
     audio = out.read_bytes()
     frames = memoryview(audio).cast("Q")  # One stereo float32 frame per word.
-    first = next((i for i, frame in enumerate(frames) if frame), len(frames))
+    first = next((i for i, frame in enumerate(frames) if frame), 0)
     end = next((i + 1 for i in range(len(frames)-1, first-1, -1) if frames[i]), first)
     played = audio[first*8:end*8]
     assert played == data[:len(played)], "observed signal differs from the original prefix"
