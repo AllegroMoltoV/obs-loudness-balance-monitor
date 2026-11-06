@@ -129,3 +129,11 @@ if(ENABLE_BASELINE_PROBE)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/baseline-probe"
   )
 endif()
+
+option(ENABLE_PREVIEW_TESTS "Build finite recording verification" OFF)
+if(ENABLE_PREVIEW_TESTS)
+  enable_testing()
+  add_executable(lbm-preview-core .github/tests/preview-core.cpp)
+  target_compile_features(lbm-preview-core PRIVATE cxx_std_17)
+  add_test(NAME preview-recording-core COMMAND lbm-preview-core)
+endif()
