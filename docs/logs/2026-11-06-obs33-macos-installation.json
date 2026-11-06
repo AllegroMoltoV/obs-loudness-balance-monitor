@@ -1,0 +1,57 @@
+{
+  "user": "runner",
+  "uid": 501,
+  "home": "/Users/runner",
+  "target": "CurrentUserHomeDirectory",
+  "signature": {
+    "command": [
+      "/usr/sbin/pkgutil",
+      "--check-signature",
+      "/Users/runner/work/obs-loudness-balance-monitor/obs-loudness-balance-monitor/release/loudness-balance-monitor-0.1.3-macos-universal.pkg"
+    ],
+    "exit_code": 1,
+    "stdout": "Package \"loudness-balance-monitor-0.1.3-macos-universal.pkg\":\n   Status: no signature\n",
+    "stderr": ""
+  },
+  "gatekeeper": {
+    "command": [
+      "/usr/sbin/spctl",
+      "--assess",
+      "--type",
+      "install",
+      "--verbose=4",
+      "/Users/runner/work/obs-loudness-balance-monitor/obs-loudness-balance-monitor/release/loudness-balance-monitor-0.1.3-macos-universal.pkg"
+    ],
+    "exit_code": 3,
+    "stdout": "",
+    "stderr": "/Users/runner/work/obs-loudness-balance-monitor/obs-loudness-balance-monitor/release/loudness-balance-monitor-0.1.3-macos-universal.pkg: rejected\nsource=no usable signature\n"
+  },
+  "notarization": "Not submitted by baseline; no signing credentials configured",
+  "intel_execution": "not tested",
+  "minimum_os_execution": "not tested",
+  "installed_bundle": "/Users/runner/Library/Application Support/obs-studio/plugins/loudness-balance-monitor.plugin",
+  "bundle_signature": {
+    "command": [
+      "codesign",
+      "-d",
+      "--verbose=4",
+      "/Users/runner/Library/Application Support/obs-studio/plugins/loudness-balance-monitor.plugin"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "Executable=/Users/runner/Library/Application Support/obs-studio/plugins/loudness-balance-monitor.plugin/Contents/MacOS/loudness-balance-monitor\nIdentifier=com.example.plugintemplate-for-obs\nFormat=bundle with Mach-O universal (x86_64 arm64)\nCodeDirectory v=20500 size=515 flags=0x10002(adhoc,runtime) hashes=9+3 location=embedded\nVersionPlatform=1\nVersionMin=851968\nVersionSDK=1705216\nHash type=sha256 size=32\nCandidateCDHash sha256=1bcb398816825a3d78bff50a06b40c5a562ba541\nCandidateCDHashFull sha256=1bcb398816825a3d78bff50a06b40c5a562ba54156eac4f6f488b9f8dfd04413\nHash choices=sha256\nCMSDigest=1bcb398816825a3d78bff50a06b40c5a562ba54156eac4f6f488b9f8dfd04413\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=65536\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=1bcb398816825a3d78bff50a06b40c5a562ba541\nSignature=adhoc\nInfo.plist entries=21\nTeamIdentifier=not set\nRuntime Version=26.5.0\nSealed Resources version=2 rules=13 files=2\nInternal requirements count=0 size=12\n"
+  },
+  "receipt": {
+    "command": [
+      "/usr/sbin/pkgutil",
+      "--volume",
+      "/Users/runner",
+      "--pkg-info-plist",
+      "com.example.plugintemplate-for-obs"
+    ],
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "No receipt for 'com.example.plugintemplate-for-obs' found at '/Users/runner'.\n"
+  },
+  "installed_payload_matches": true
+}

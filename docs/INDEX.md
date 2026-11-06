@@ -16,6 +16,10 @@
 - [2026-09-20 v0.1.3 の配布と OBS Forum 更新](reports/2026-09-20-v013-publish.md)
 - [2026-09-22 OBS Forum の AI 利用開示要件](reports/2026-09-22-obs-forum-ai-disclosure.md)
 
+- [2026-11-06 OBS 33.0.1の既存版基準検証](reports/2026-11-06-obs33-baseline.md)
+
+- [2026-11-06 録音・試聴の製品統合検証](reports/2026-11-06-preview-integration.md)
+
 ## logs
 
 再確認が必要な実行ログを保存します。

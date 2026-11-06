@@ -1,0 +1,20 @@
+{
+    "obs": "33.0.1",
+    "observations": {
+        "balance_target": 8,
+        "bgm_selected": true,
+        "initial_dock_visible": false,
+        "mix_preset": 1,
+        "monitor_restored_at_recording_started": true,
+        "preview_recorded": "2.4 秒の録音が完了しました。音楽アプリ・ブラウザ・ゲームなど、OBSの外で鳴っている音を止め、発声・演奏を終えてから「試聴する」を押してください。\nOBS側のモニタリングは、試聴中に自動でOFFになります。",
+        "preview_recording_start_interrupt": true,
+        "recording_controls_blocked": true,
+        "responding_meters": 3,
+        "saved_dock_visible": true,
+        "vad_threshold": -35,
+        "voice_source": "LBM baseline voice"
+    },
+    "passed": true,
+    "phase": "setup",
+    "reason": "actual OBS recording interrupted preview and restored monitor"
+}

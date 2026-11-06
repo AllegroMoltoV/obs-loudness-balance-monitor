@@ -1,0 +1,5 @@
+{
+    "obs": "33.0.1",
+    "passed": true,
+    "reason": "dock visible; meter responded to test PCM"
+}
