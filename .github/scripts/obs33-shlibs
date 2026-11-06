@@ -1,0 +1,2 @@
+libobs 30 obs-studio (>= 33.0.1), obs-studio (<< 34)
+libobs-frontend-api 30 obs-studio (>= 33.0.1), obs-studio (<< 34)

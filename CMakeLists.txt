@@ -97,3 +97,25 @@ if(WIN32 AND ENABLE_POST_BUILD_INSTALL)
     VERBATIM
   )
 endif()
+
+option(ENABLE_BASELINE_PROBE "Build the isolated baseline verification module" OFF)
+if(ENABLE_BASELINE_PROBE)
+  add_library(lbm-baseline-probe MODULE .github/baseline/probe.cpp)
+  if(APPLE)
+    set_target_properties(lbm-baseline-probe PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION plugin)
+    add_custom_command(
+      TARGET lbm-baseline-probe
+      POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_DIR:lbm-baseline-probe>/Contents/Resources"
+    )
+  endif()
+  target_compile_features(lbm-baseline-probe PRIVATE cxx_std_17)
+  target_link_libraries(lbm-baseline-probe PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Widgets)
+  set_target_properties(
+    lbm-baseline-probe
+    PROPERTIES
+      PREFIX ""
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/baseline-probe"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/baseline-probe"
+  )
+endif()

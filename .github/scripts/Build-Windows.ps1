@@ -3,7 +3,8 @@ param(
     [ValidateSet('x64')]
     [string] $Target = 'x64',
     [ValidateSet('Debug', 'RelWithDebInfo', 'Release', 'MinSizeRel')]
-    [string] $Configuration = 'RelWithDebInfo'
+    [string] $Configuration = 'RelWithDebInfo',
+    [switch] $BaselineProbe
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,6 +49,7 @@ function Build {
     Ensure-Location $ProjectRoot
 
     $CmakeArgs = @('--preset', "windows-ci-${Target}")
+    if ($BaselineProbe) { $CmakeArgs += '-DENABLE_BASELINE_PROBE=ON' }
     $CmakeBuildArgs = @('--build')
     $CmakeInstallArgs = @()
 

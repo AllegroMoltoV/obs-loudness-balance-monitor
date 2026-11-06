@@ -4,3 +4,6 @@ package 'git'
 package 'jq'
 package 'ninja-build', bin: 'ninja'
 package 'pkg-config'
+
+package 'curl'
+package 'ca-certificates'

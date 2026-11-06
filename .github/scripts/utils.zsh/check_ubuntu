@@ -3,19 +3,16 @@ autoload -Uz log_info log_status log_error log_debug log_warning log_group
 log_group 'Check Linux build requirements'
 log_debug 'Checking Linux distribution name and version...'
 
-# Check for Ubuntu version 22.10 or later, which have srt and librist available via apt-get
-typeset -g -i UBUNTU_2210_OR_LATER=0
-if [[ -f /etc/os_release ]] {
-  local dist_name
-  local dist_version
-  read -r dist_name dist_version <<< "$(source /etc/os_release; print "${NAME} ${VERSION_ID}")"
-
-  autoload -Uz is-at-least
-  if [[ ${dist_name} == Ubuntu ]] && is-at-least 22.10 ${dist_version}; then
-    typeset -g -i UBUNTU_2210_OR_LATER=1
-  fi
+if [[ ! -f /etc/os-release ]] {
+  log_error 'Ubuntu 26.04 is required.'
+  return 2
 }
-
+local dist_id dist_version
+read -r dist_id dist_version <<< "$(source /etc/os-release; print "${ID} ${VERSION_ID}")"
+if [[ ${dist_id} != ubuntu || ${dist_version} != 26.04 ]] {
+  log_error 'Ubuntu 26.04 is required for the pinned OBS 33.0.1 package.'
+  return 2
+}
 log_debug 'Checking for apt-get...'
 if (( ! ${+commands[apt-get]} )) {
   log_error 'No apt-get command found. Please install apt'

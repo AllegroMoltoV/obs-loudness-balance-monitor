@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Usage: bash .github/scripts/run-ubuntu-smoke path/to/lbm-baseline-probe.so
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+probe="$(realpath "${1:?Pass the built lbm-baseline-probe.so}")"
+test -f "$probe"
+source /etc/os-release
+[[ "$ID" == ubuntu && "$VERSION_ID" == 26.04 ]]
+[[ "$(dpkg-query -W -f='${Version}' obs-studio)" == 33.0.1 ]]
+
+sudo apt-get install -y --no-install-recommends xvfb xauth dbus-x11 libgl1-mesa-dri
+shopt -s nullglob
+packages=("$project_root"/release/*-x86_64-linux-gnu.deb)
+[[ "${#packages[@]}" == 1 ]] || { echo "Expected one plugin deb." >&2; exit 1; }
+sudo apt-get install -y --no-install-recommends "${packages[0]}"
+
+result_dir="$project_root/release/ubuntu26-baseline"
+[[ ! -e "$result_dir" ]] || { echo "Use a fresh baseline result directory." >&2; exit 1; }
+mkdir -p "$result_dir"
+export LBM_BASELINE_RESULT_DIR="$result_dir"
+export XDG_CONFIG_HOME="$result_dir/config"
+export XDG_DATA_HOME="$result_dir/data"
+export XDG_CACHE_HOME="$result_dir/cache"
+export XDG_RUNTIME_DIR="$result_dir/runtime"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+export QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1
+export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/no-physical-audio"
+plugin_dir="$XDG_DATA_HOME/obs-studio/plugins/lbm-baseline-probe"
+mkdir -p "$plugin_dir/data"
+cp "$probe" "$plugin_dir/lbm-baseline-probe.so"
+config="$XDG_CONFIG_HOME/obs-studio"
+mkdir -p "$config/basic/profiles/Baseline" "$config/basic/scenes"
+cat > "$config/global.ini" <<'CONFIG'
+[General]
+EnableAutoUpdates=false
+LastVersion=553648129
+CONFIG
+cat > "$config/user.ini" <<'CONFIG'
+[General]
+FirstRun=true
+ConfirmOnExit=false
+[Basic]
+Profile=Baseline
+ProfileDir=Baseline
+SceneCollection=Baseline
+SceneCollectionFile=Baseline.json
+CONFIG
+cat > "$config/basic/profiles/Baseline/basic.ini" <<'CONFIG'
+[General]
+Name=Baseline
+[Video]
+BaseCX=640
+BaseCY=360
+OutputCX=640
+OutputCY=360
+FPSCommon=30
+[Audio]
+SampleRate=48000
+ChannelSetup=Stereo
+CONFIG
+cat > "$config/basic/scenes/Baseline.json" <<'CONFIG'
+{"name":"Baseline","sources":[{"name":"Baseline","id":"scene","settings":{"items":[]}}],"current_scene":"Baseline","current_program_scene":"Baseline","scene_order":[{"name":"Baseline"}]}
+CONFIG
+xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX' \
+  dbus-run-session -- timeout 90 /usr/local/bin/obs --disable-updater \
+  > "$result_dir/obs-console.log" 2>&1
+jq -e '.passed == true' "$result_dir/result.json"
+test -s "$result_dir/dock.png"
+grep -R -F 'LBM_BASELINE PASS' "$config/logs"
+dpkg-deb -I "${packages[0]}" > "$result_dir/package-control.txt"
+dpkg-deb -c "${packages[0]}" > "$result_dir/package-files.txt"

@@ -158,7 +158,19 @@ ${_usage_host:-}"
   if (( package )) {
     log_group "Packaging ${product_name}..."
     pushd ${project_root}
-    cmake --build build_${target##*-} --config ${config} -t package ${cmake_args}
+    local -r dependency_dir="${project_root}/.deps/debian-dependencies"
+    mkdir -p "${dependency_dir}/debian"
+    print -r -- "Source: ${product_name}" > "${dependency_dir}/debian/control"
+    local dependency_output
+    dependency_output=$(cd "${dependency_dir}" && dpkg-shlibdeps -O \
+      -L"${project_root}/.github/scripts/obs33-shlibs" \
+      -l/usr/local/lib/x86_64-linux-gnu \
+      -e"${project_root}/build_${target##*-}/${product_name}.so")
+    local package_dependencies="${dependency_output#shlibs:Depends=}"
+    [[ -n ${package_dependencies} && ${package_dependencies} != ${dependency_output} ]] || return 2
+    cpack --config "build_${target##*-}/CPackConfig.cmake" -C "${config}" \
+      -D CPACK_DEBIAN_PACKAGE_SHLIBDEPS=OFF \
+      -D "CPACK_DEBIAN_PACKAGE_DEPENDS=${package_dependencies}" ${cmake_args}
     popd
   } else {
     log_group "Archiving ${product_name}..."

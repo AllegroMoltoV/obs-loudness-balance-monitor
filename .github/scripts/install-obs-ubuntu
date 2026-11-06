@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/os-release
+[[ "$ID" == ubuntu && "$VERSION_ID" == 26.04 && "$(dpkg --print-architecture)" == amd64 ]] || {
+  echo "OBS 33.0.1 requires Ubuntu 26.04 amd64 for this build." >&2
+  exit 1
+}
+
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+obs_version="$(jq -r '.dependencies["obs-studio"].version' "$project_root/buildspec.json")"
+[[ "$obs_version" == 33.0.1 ]] || { echo "Update the pinned Linux release and checksum together." >&2; exit 1; }
+asset="OBS-Studio-33.0.1-Ubuntu-26.04-x86_64.deb"
+checksum=a9f062057576074439e6467f2716e3bbed6a0edab6ebf2c2f9595a3d2f1dc57f
+mkdir -p "$project_root/.deps"
+deb="$project_root/.deps/$asset"
+if [[ ! -f "$deb" ]]; then
+  curl --fail --location --retry 3 --output "$deb" "https://github.com/obsproject/obs-studio/releases/download/$obs_version/$asset"
+fi
+printf '%s  %s\n' "$checksum" "$deb" | sha256sum --check
+[[ "$(dpkg-deb -f "$deb" Package)" == obs-studio ]]
+[[ "$(dpkg-deb -f "$deb" Version)" == "$obs_version" ]]
+[[ "$(dpkg-deb -f "$deb" Architecture)" == amd64 ]]
+
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends build-essential libsimde-dev qt6-base-dev libqt6svg6-dev dpkg-dev file "$deb"
+sudo ldconfig
+[[ "$(dpkg-query -W -f='${Version}' obs-studio)" == "$obs_version" ]]
+test -f /usr/local/include/obs/obs.h
+test -f /usr/local/lib/x86_64-linux-gnu/cmake/libobs/libobsConfig.cmake
+test -f /usr/local/lib/x86_64-linux-gnu/cmake/obs-frontend-api/obs-frontend-apiConfig.cmake
+test -f /usr/local/lib/x86_64-linux-gnu/libobs.so.30
+test -f /usr/local/lib/x86_64-linux-gnu/libobs-frontend-api.so.30
+/usr/local/bin/obs --version

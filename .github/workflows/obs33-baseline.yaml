@@ -1,0 +1,73 @@
+name: OBS 33 baseline
+on:
+  push:
+    branches: [codex/obs33-baseline]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build
+        shell: pwsh
+        run: .github/scripts/Build-Windows.ps1 -Target x64 -Configuration RelWithDebInfo -BaselineProbe
+      - name: Package
+        shell: pwsh
+        run: .github/scripts/Package-Windows.ps1 -Target x64 -Configuration RelWithDebInfo
+      - name: Load official OBS
+        shell: pwsh
+        run: .github/scripts/Test-ObsLoad-Windows.ps1 -Configuration RelWithDebInfo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs33-windows
+          include-hidden-files: true
+          path: |
+            release/
+            .deps/obs-load-windows/results/
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: python3 .github/baseline/macos-baseline.py build
+      - run: python3 .github/baseline/macos-baseline.py prepare
+      - run: python3 .github/baseline/macos-baseline.py run --probe build_macos/baseline-probe/RelWithDebInfo/lbm-baseline-probe.plugin --result-dir obs33-results/macos/probe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs33-macos
+          path: |
+            obs33-results/macos/*.log
+            obs33-results/macos/*.json
+            obs33-results/macos/probe/
+            obs33-results/macos/obs-config/
+            release/
+  ubuntu:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y zsh
+      - run: zsh .github/scripts/build-ubuntu --target ubuntu-x86_64 --config RelWithDebInfo
+      - run: cmake -S . -B build_x86_64 -DENABLE_BASELINE_PROBE=ON
+      - run: cmake --build build_x86_64 --parallel
+      - run: zsh .github/scripts/package-ubuntu --target ubuntu-x86_64 --config RelWithDebInfo --package
+      - run: bash .github/scripts/run-ubuntu-smoke build_x86_64/baseline-probe/lbm-baseline-probe.so
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs33-ubuntu
+          path: release/
