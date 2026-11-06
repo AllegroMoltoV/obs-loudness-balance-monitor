@@ -126,7 +126,7 @@ def install():
     plan = run([installer, '-pkg', package, '-target', 'CurrentUserHomeDirectory', '-config'])
     (OUT / 'installer-target.plist').write_bytes(plan)
     target_plan = plistlib.loads(plan)
-    if target_plan.get('target') != 'CurrentUserHomeDirectory':
+    if target_plan.get('Target') != 'CurrentUserHomeDirectory':
         raise RuntimeError(f'Unexpected installer target configuration: {target_plan}')
     diagnostics = {'user': getpass.getuser(), 'uid': os.geteuid(), 'home': str(Path.home()),
         'target': 'CurrentUserHomeDirectory', 'signature': diagnostic(['/usr/sbin/pkgutil', '--check-signature', package]),
