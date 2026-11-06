@@ -50,7 +50,8 @@
       "cacheVariables": {
         "CMAKE_AUTOMOC_COMPILER_PREDEFINES": false,
         "CMAKE_COMPILE_WARNING_AS_ERROR": true,
-        "ENABLE_CCACHE": true
+        "ENABLE_CCACHE": true,
+        "ENABLE_PREVIEW_TESTS": true
       }
     },
     {
@@ -82,7 +83,8 @@
       "description": "Build for Windows x64 on CI",
       "cacheVariables": {
         "CMAKE_COMPILE_WARNING_AS_ERROR": true,
-        "ENABLE_POST_BUILD_INSTALL": false
+        "ENABLE_POST_BUILD_INSTALL": false,
+        "ENABLE_PREVIEW_TESTS": true
       }
     },
     {
@@ -118,7 +120,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_COMPILE_WARNING_AS_ERROR": true,
-        "ENABLE_CCACHE": true
+        "ENABLE_CCACHE": true,
+        "ENABLE_PREVIEW_TESTS": true
       }
     }
   ],
