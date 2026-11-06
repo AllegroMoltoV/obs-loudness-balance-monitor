@@ -103,9 +103,25 @@ static bool inspect_settings(bool configure)
 }
 
 
+static QString product_text(const char *key)
+{
+    return QString::fromUtf8(obs_module_get_locale_text(obs_get_module("loudness-balance-monitor"), key));
+}
+
 static bool preview_check(bool condition, const char *reason)
 {
-    if (!condition) finish(false, QString::fromUtf8(reason));
+    if (!condition) {
+        QJsonObject controls;
+        for (const auto *name : {"previewRecord", "previewPlay", "previewCancel"}) {
+            if (auto *button = dock->findChild<QPushButton *>(name))
+                controls.insert(name, QJsonObject{{"text", button->text()}, {"enabled", button->isEnabled()}});
+        }
+        if (auto *label = dock->findChild<QLabel *>("previewStatus"))
+            controls.insert("status", label->text());
+        observations.insert("preview_failure_controls", controls);
+        dock_container->grab().save(result_dir + "/preview-failure.png");
+        finish(false, QString::fromUtf8(reason));
+    }
     return condition;
 }
 
@@ -129,31 +145,32 @@ static void preview_test()
     if (!preview_check(!record->isEnabled() && !play->isEnabled(), "countdown did not start")) return;
     QTimer::singleShot(1000, dock, [=] {
         if (finished) return;
-        preview_check(!record->isEnabled() && status->text().contains("Recording starts"), "countdown not retained");
+        preview_check(!record->isEnabled() && (status->text() == product_text("PreviewCountdown").arg(2) || status->text() == product_text("PreviewCountdown").arg(3)), "countdown not retained");
     });
     QTimer::singleShot(5500, dock, [=] {
         if (finished) return;
-        if (!preview_check(record->isEnabled() && record->text() == "Finish recording", "recording did not start")) return;
+        if (!preview_check(record->isEnabled() && record->text() == product_text("PreviewFinish"), "recording did not start")) return;
         record->click();
-        if (!preview_check(play->isEnabled() && status->text().contains("Recorded"), "manual recording did not freeze")) return;
-        observations.insert("preview_recorded", status->text());
+        if (!preview_check(play->isEnabled() && record->text() == product_text("PreviewRerecord"), "manual recording did not freeze")) return;
+        const QString ready_message = status->text();
+        observations.insert("preview_recorded", ready_message);
         // End only these synthetic sources, as an end user ends external audio before preview.
         producer->stop();
         obs_source_set_monitoring_enabled(voice, true);
         play->click();
-        if (!preview_check(play->text() == "Stop preview" && !obs_source_get_monitoring_enabled(voice), "monitor was not disabled for preview")) return;
+        if (!preview_check(play->text() == product_text("PreviewStop") && !obs_source_get_monitoring_enabled(voice), "monitor was not disabled for preview")) return;
         QTimer::singleShot(6000, dock, [=] {
             if (finished) return;
-            if (!preview_check(play->text() == "Preview" && play->isEnabled() &&
-                               status->text().contains("Recorded") && obs_source_get_monitoring_enabled(voice),
+            if (!preview_check(play->text() == product_text("PreviewPlay") && play->isEnabled() &&
+                               status->text() == ready_message && obs_source_get_monitoring_enabled(voice),
                                "natural playback completion or monitor restore failed")) return;
             observations.insert("preview_natural_end", true);
             play->click();
             QTimer::singleShot(300, dock, [=] {
                 if (finished) return;
-                if (!preview_check(play->text() == "Stop preview", "replay did not start")) return;
+                if (!preview_check(play->text() == product_text("PreviewStop"), "replay did not start")) return;
                 play->click();
-                if (!preview_check(play->text() == "Preview" && obs_source_get_monitoring_enabled(voice), "cancel did not restore monitoring")) return;
+                if (!preview_check(play->text() == product_text("PreviewPlay") && obs_source_get_monitoring_enabled(voice), "cancel did not restore monitoring")) return;
                 observations.insert("preview_replay_stop", true);
                 monitor->setChecked(false);
                 play->click();
