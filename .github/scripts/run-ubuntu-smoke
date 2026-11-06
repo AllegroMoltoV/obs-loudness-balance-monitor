@@ -12,12 +12,31 @@ sudo apt-get install -y --no-install-recommends xvfb xauth dbus-x11 libgl1-mesa-
 shopt -s nullglob
 packages=("$project_root"/release/*-x86_64-linux-gnu.deb)
 [[ "${#packages[@]}" == 1 ]] || { echo "Expected one plugin deb." >&2; exit 1; }
-sudo apt-get install -y --no-install-recommends "${packages[0]}"
+sudo apt-get install -y --reinstall --no-install-recommends "${packages[0]}"
 
-result_dir="$project_root/release/ubuntu26-baseline"
+result_dir="${LBM_BASELINE_RUN_DIR:-$project_root/release/ubuntu26-baseline}"
 [[ ! -e "$result_dir" ]] || { echo "Use a fresh baseline result directory." >&2; exit 1; }
 mkdir -p "$result_dir"
-export LBM_BASELINE_RESULT_DIR="$result_dir"
+dpkg-deb -I "${packages[0]}" > "$result_dir/package-control.txt"
+dpkg-deb -c "${packages[0]}" > "$result_dir/package-files.txt"
+package_name="$(dpkg-deb -f "${packages[0]}" Package)"
+dpkg-query -L "$package_name" > "$result_dir/installed-files.txt"
+binary="/usr/local/lib/x86_64-linux-gnu/obs-modules/plugins/$package_name.so"
+data="/usr/local/share/obs/obs-modules/plugins/$package_name"
+grep -F -x "$binary" "$result_dir/installed-files.txt"
+grep -F -x "$data/locale/en-US.ini" "$result_dir/installed-files.txt"
+grep -F -x "$data/locale/ja-JP.ini" "$result_dir/installed-files.txt"
+if grep -E 'lbm-baseline-probe|libebur128|/include/|/obs-plugins/' "$result_dir/installed-files.txt"; then
+  echo "Unexpected development files or legacy layout in the installed package." >&2
+  exit 1
+fi
+unset OBS_PLUGINS_PATH OBS_PLUGINS_DATA_PATH OBS_LEGACY_PLUGINS_PATH OBS_LEGACY_PLUGINS_DATA_PATH LD_LIBRARY_PATH
+ldd "$binary" > "$result_dir/runtime-libraries.txt"
+if grep -E 'not found|/work/|/build_|/\.deps/' "$result_dir/runtime-libraries.txt"; then
+  echo "The installed plugin has unresolved or build-directory dependencies." >&2
+  exit 1
+fi
+sha256sum "${packages[0]}" "$binary" > "$result_dir/package-hashes.txt"
 export XDG_CONFIG_HOME="$result_dir/config"
 export XDG_DATA_HOME="$result_dir/data"
 export XDG_CACHE_HOME="$result_dir/cache"
@@ -62,11 +81,15 @@ CONFIG
 cat > "$config/basic/scenes/Baseline.json" <<'CONFIG'
 {"name":"Baseline","sources":[{"name":"Baseline","id":"scene","settings":{"items":[]}}],"current_scene":"Baseline","current_program_scene":"Baseline","scene_order":[{"name":"Baseline"}]}
 CONFIG
-xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX' \
-  dbus-run-session -- timeout 90 /usr/local/bin/obs --disable-updater \
-  > "$result_dir/obs-console.log" 2>&1
-jq -e '.passed == true' "$result_dir/result.json"
-test -s "$result_dir/dock.png"
-grep -R -F 'LBM_BASELINE PASS' "$config/logs"
-dpkg-deb -I "${packages[0]}" > "$result_dir/package-control.txt"
-dpkg-deb -c "${packages[0]}" > "$result_dir/package-files.txt"
+for phase in setup restore restore-hidden; do
+  export LBM_BASELINE_PHASE="$phase"
+  export LBM_BASELINE_RESULT_DIR="$result_dir/$phase"
+  mkdir -p "$LBM_BASELINE_RESULT_DIR"
+  xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX' \
+    dbus-run-session -- timeout 90 /usr/local/bin/obs --disable-updater \
+    > "$LBM_BASELINE_RESULT_DIR/obs-console.log" 2>&1
+  jq -e --arg phase "$phase" '.passed == true and .phase == $phase and .obs == "33.0.1"' \
+    "$LBM_BASELINE_RESULT_DIR/result.json"
+  test -s "$LBM_BASELINE_RESULT_DIR/dock.png"
+  grep -F 'LBM_BASELINE PASS' "$LBM_BASELINE_RESULT_DIR/obs-console.log"
+done

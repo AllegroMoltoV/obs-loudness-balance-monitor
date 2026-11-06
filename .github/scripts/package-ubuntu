@@ -147,6 +147,11 @@ ${_usage_host:-}"
   read -r product_name product_version <<< \
     "$(jq -r '. | {name, version} | join(" ")' ${buildspec_file})"
 
+  if ! grep -q '^CMAKE_INSTALL_PREFIX:PATH=/usr/local$' "${project_root}/build_${target##*-}/CMakeCache.txt"; then
+    log_error 'Configure the official OBS build with CMAKE_INSTALL_PREFIX=/usr/local before packaging.'
+    return 2
+  fi
+
   local -a cmake_args=()
   if (( _loglevel > 1 )) cmake_args+=(--verbose)
 

@@ -41,6 +41,7 @@ jobs:
           submodules: recursive
       - run: python3 .github/baseline/macos-baseline.py build
       - run: python3 .github/baseline/macos-baseline.py prepare
+      - run: python3 .github/baseline/macos-baseline.py install
       - run: python3 .github/baseline/macos-baseline.py run --probe build_macos/baseline-probe/RelWithDebInfo/lbm-baseline-probe.plugin --result-dir obs33-results/macos/probe
       - uses: actions/upload-artifact@v4
         if: always()
@@ -49,6 +50,7 @@ jobs:
           path: |
             obs33-results/macos/*.log
             obs33-results/macos/*.json
+            obs33-results/macos/*.plist
             obs33-results/macos/probe/
             obs33-results/macos/obs-config/
             release/

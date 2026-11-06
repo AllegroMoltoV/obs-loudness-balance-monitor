@@ -10,6 +10,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
+    throw 'Normal-install verification requires a fresh GitHub-hosted runner.'
+}
+$ConfigDir = Join-Path $env:APPDATA 'obs-studio'
+$SystemPlugins = Join-Path $env:ProgramData 'obs-studio/plugins'
+$ProductInstall = Join-Path $SystemPlugins 'loudness-balance-monitor'
+$ProbeInstall = Join-Path $SystemPlugins 'lbm-baseline-probe'
+foreach ($Existing in @($ConfigDir, $ProductInstall, $ProbeInstall)) {
+    if (Test-Path -LiteralPath $Existing) { throw "Fresh runner required; existing state: $Existing" }
+}
+if (@(Get-Process -Name obs64 -ErrorAction SilentlyContinue).Count) { throw 'An OBS process already exists.' }
+
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if (!$OutputRoot) { $OutputRoot = Join-Path $ProjectRoot '.deps/obs-load-windows' }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
@@ -40,14 +52,16 @@ Expand-Archive -LiteralPath $ArchivePath -DestinationPath $Runtime
 $BinaryDir = Join-Path $Runtime 'bin/64bit'
 $ObsExe = Join-Path $BinaryDir 'obs64.exe'
 if (!(Test-Path -LiteralPath $ObsExe -PathType Leaf)) { throw 'Unexpected OBS archive layout.' }
-# OBS 33 retains this portable legacy module layout until OBS 34.
-$PluginDir = Join-Path $Runtime 'obs-plugins/64bit'
-New-Item -ItemType Directory -Path $PluginDir -Force | Out-Null
-Copy-Item -LiteralPath $ProductDll, $ProbeDll -Destination $PluginDir
-$DataDir = Join-Path $Runtime 'data/obs-plugins/loudness-balance-monitor'
-New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
-Copy-Item -Path (Join-Path $ProductData '*') -Destination $DataDir -Recurse
-$ConfigDir = Join-Path $Runtime 'config/obs-studio'
+New-Item -ItemType Directory -Path $SystemPlugins -Force | Out-Null
+# Install the distribution's normal ProgramData layout on the disposable runner.
+Copy-Item -LiteralPath (Join-Path $PackageDir 'loudness-balance-monitor') -Destination $ProductInstall -Recurse
+$ProbeBinaryDir = Join-Path $ProbeInstall 'bin/64bit'
+New-Item -ItemType Directory -Path $ProbeBinaryDir -Force | Out-Null
+Copy-Item -LiteralPath $ProbeDll -Destination $ProbeBinaryDir
+$InstalledDll = Join-Path $ProductInstall 'bin/64bit/loudness-balance-monitor.dll'
+if ((Get-FileHash -LiteralPath $InstalledDll).Hash -ne (Get-FileHash -LiteralPath $ProductDll).Hash) {
+    throw 'Installed DLL differs from the distribution.'
+}
 $ProfileDir = Join-Path $ConfigDir 'basic/profiles/Baseline'
 $SceneDir = Join-Path $ConfigDir 'basic/scenes'
 New-Item -ItemType Directory -Path $ProfileDir, $SceneDir -Force | Out-Null
@@ -64,37 +78,57 @@ Set-Content -LiteralPath (Join-Path $ProfileDir 'basic.ini') -Value $ProfileIni 
     current_program_scene = 'Scene'
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Encoding utf8
 $PreviousResultDir = $env:LBM_BASELINE_RESULT_DIR
+$PreviousPhase = $env:LBM_BASELINE_PHASE
 $Process = $null
 try {
-    $env:LBM_BASELINE_RESULT_DIR = $ResultDir
-    $Process = Start-Process -FilePath $ObsExe -WorkingDirectory $BinaryDir -ArgumentList @('--portable', '--disable-updater', '--multi') -WindowStyle Hidden -PassThru
-    if (!$Process.WaitForExit($TimeoutSeconds * 1000)) { throw 'OBS baseline probe timed out.' }
-    if ($Process.ExitCode -ne 0) { throw "OBS exited with code $($Process.ExitCode)." }
-    $ResultPath = Join-Path $ResultDir 'result.json'
-    if (!(Test-Path -LiteralPath $ResultPath)) { throw 'Probe did not produce result.json.' }
-    $Result = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
-    if ($Result.passed -ne $true -or $Result.obs -ne '33.0.1') { throw "Probe failed: $($Result.reason)" }
-    if (!(Test-Path -LiteralPath (Join-Path $ResultDir 'dock.png'))) { throw 'Dock screenshot missing.' }
-    $Logs = @(Get-ChildItem -LiteralPath (Join-Path $ConfigDir 'logs') -Filter '*.txt')
-    if (!$Logs.Count) { throw 'OBS log missing.' }
-    $LogText = ($Logs | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
-    foreach ($Required in @('Portable mode: true', 'plugin loaded successfully', 'Dock registered successfully', 'LBM_BASELINE PASS')) {
-        if (!$LogText.Contains($Required)) { throw "Required log marker missing: $Required" }
+    foreach ($Phase in @('setup', 'restore', 'restore-hidden')) {
+        $PhaseDir = Join-Path $ResultDir $Phase
+        New-Item -ItemType Directory -Path $PhaseDir | Out-Null
+        $env:LBM_BASELINE_RESULT_DIR = $PhaseDir
+        $env:LBM_BASELINE_PHASE = $Phase
+        $Process = Start-Process -FilePath $ObsExe -WorkingDirectory $BinaryDir -ArgumentList @('--disable-updater', '--multi') -WindowStyle Hidden -PassThru
+        if (!$Process.WaitForExit($TimeoutSeconds * 1000)) { throw "OBS baseline probe timed out: $Phase" }
+        if ($Process.ExitCode -ne 0) { throw "OBS exited with code $($Process.ExitCode): $Phase" }
+        $ResultPath = Join-Path $PhaseDir 'result.json'
+        if (!(Test-Path -LiteralPath $ResultPath)) { throw "Probe result missing: $Phase" }
+        $Result = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
+        if ($Result.passed -ne $true -or $Result.obs -ne '33.0.1' -or $Result.phase -ne $Phase) { throw "Probe failed: $Phase $($Result.reason)" }
+        if (!(Test-Path -LiteralPath (Join-Path $PhaseDir 'dock.png'))) { throw "Dock screenshot missing: $Phase" }
+        $Logs = @(Get-ChildItem -LiteralPath (Join-Path $ConfigDir 'logs') -Filter '*.txt')
+        if (!$Logs.Count) { throw 'OBS log missing.' }
+        $LogText = ($Logs | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+        foreach ($Required in @('Portable mode: false', 'plugin loaded successfully', 'Dock registered successfully', "LBM_BASELINE PASS phase=$Phase")) {
+            if (!$LogText.Contains($Required)) { throw "Required log marker missing: $Required" }
+        }
+        if ($Phase -ne 'setup' -and !$LogText.Contains('Restored OBS dock state after registration')) {
+            throw 'Dock restoration log missing.'
+        }
+        $SettingsPath = Join-Path $ConfigDir 'plugin_config/loudness-balance-monitor/settings.json'
+        $Settings = Get-Content -LiteralPath $SettingsPath -Raw | ConvertFrom-Json
+        if ($Settings.voice_source -ne 'LBM baseline voice' -or
+            @($Settings.bgm_sources.name) -notcontains 'LBM baseline bgm' -or
+            $Settings.vad_threshold -ne -35 -or $Settings.balance_target -ne 8 -or $Settings.mix_preset -ne 1) {
+            throw "Saved product settings mismatch: $Phase"
+        }
+        Copy-Item -LiteralPath $ConfigDir -Destination (Join-Path $PhaseDir 'saved-config') -Recurse
+        Write-Output "OBS 33.0.1 normal installation verification passed: $Phase"
     }
-    Write-Output "OBS 33.0.1 baseline load passed. Evidence: $ResultDir"
 } finally {
     if ($Process -and !$Process.HasExited) {
         Stop-Process -Id $Process.Id -Force
         $Process.WaitForExit()
     }
     $env:LBM_BASELINE_RESULT_DIR = $PreviousResultDir
+    $env:LBM_BASELINE_PHASE = $PreviousPhase
     $LogDir = Join-Path $ConfigDir 'logs'
     if (Test-Path -LiteralPath $LogDir) { Copy-Item -LiteralPath $LogDir -Destination (Join-Path $ResultDir 'obs-logs') -Recurse }
     @{
         runtime_version = '33.0.1'
         runtime_archive_sha256 = $ActualHash
         package_sha256 = (Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash
-        product_sha256 = (Get-FileHash -LiteralPath $ProductDll -Algorithm SHA256).Hash
+        product_sha256 = (Get-FileHash -LiteralPath $InstalledDll -Algorithm SHA256).Hash
+        product_installed_path = $InstalledDll
+        config_directory = $ConfigDir
         probe_sha256 = (Get-FileHash -LiteralPath $ProbeDll -Algorithm SHA256).Hash
         process_exit_code = $(if ($Process -and $Process.HasExited) { $Process.ExitCode } else { $null })
         runner_image = $env:ImageVersion

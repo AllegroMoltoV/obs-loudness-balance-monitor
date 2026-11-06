@@ -13,7 +13,7 @@ include(helpers)
 
 # libebur128 for LUFS measurement (static linking)
 include(FetchContent)
-FetchContent_Declare(libebur128 GIT_REPOSITORY https://github.com/jiixyj/libebur128.git GIT_TAG v1.2.6)
+FetchContent_Declare(libebur128 GIT_REPOSITORY https://github.com/jiixyj/libebur128.git GIT_TAG v1.2.6 EXCLUDE_FROM_ALL)
 # Force static library build only
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_INTERNAL_QUEUE_H ON CACHE BOOL "" FORCE)
