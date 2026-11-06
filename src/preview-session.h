@@ -10,11 +10,21 @@
 namespace lbm {
 class PreviewSession : public QObject {
     Q_OBJECT
+    Q_PROPERTY(qulonglong recordedFrames READ recorded_frames)
+    Q_PROPERTY(qulonglong recordedTimestamp READ recorded_timestamp)
+    Q_PROPERTY(qulonglong recordedRate READ recorded_rate)
 public:
-    enum class State { idle, preparing, recording, ready, playing, failed };
+    enum class State { idle, preparing, recording, waiting, ready, playing, failed };
     explicit PreviewSession(QObject *parent = nullptr);
     ~PreviewSession() override;
-    void prepare(unsigned track);
+    void prepare(unsigned track, const std::string &device, bool disable_monitoring);
+    void stop_waiting();
+    unsigned wait_countdown() const;
+    unsigned track() const { return track_; }
+    // Immutable clip metadata, published only after the callback has detached.
+    qulonglong recorded_frames() const { return clip_frames_; }
+    qulonglong recorded_timestamp() const { return clip_timestamp_; }
+    qulonglong recorded_rate() const { return clip_frames_ ? rate_ : 0; }
     void finish();
     void play(const std::string &device, bool disable_monitoring);
     void stop_playback();
@@ -39,6 +49,11 @@ private:
     uint32_t rate_ = 0;
     unsigned track_ = 0;
     uint64_t prepare_started_ = 0;
+    uint64_t wait_started_ = 0;
+    uint64_t clip_timestamp_ = 0;
+    uint32_t clip_frames_ = 0;
+    std::string prepared_device_;
+    bool prepared_monitor_off_ = true;
     bool attached_ = false;
     std::atomic<uint64_t> last_packet_{0};
     std::atomic<uint32_t> frames_{0};

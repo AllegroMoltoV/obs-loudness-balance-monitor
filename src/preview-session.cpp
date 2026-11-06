@@ -34,10 +34,13 @@ void PreviewSession::fail(const QString &message)
     state_ = State::failed;
     emit changed();
 }
-void PreviewSession::prepare(unsigned track)
+void PreviewSession::prepare(unsigned track, const std::string &device, bool disable_monitoring)
 {
     cancel();
     if (output_active()) { fail(obs_module_text("PreviewOutputActive")); return; }
+    if (device.empty()) { fail(obs_module_text("PreviewSelectDevice")); return; }
+    prepared_device_ = device;
+    prepared_monitor_off_ = disable_monitoring;
     auto *output = obs_get_audio();
     if (!output || track >= 6) { fail(obs_module_text("PreviewFormatError")); return; }
     rate_ = audio_output_get_sample_rate(output);
@@ -65,6 +68,17 @@ unsigned PreviewSession::countdown() const
     const uint64_t elapsed = os_gettime_ns() - prepare_started_;
     return elapsed >= 3000000000ULL ? 0 : unsigned((3000000000ULL - elapsed + 999999999ULL) / 1000000000ULL);
 }
+unsigned PreviewSession::wait_countdown() const
+{
+    const uint64_t elapsed = os_gettime_ns() - wait_started_;
+    return elapsed >= 3000000000ULL ? 0 : unsigned((3000000000ULL - elapsed + 999999999ULL) / 1000000000ULL);
+}
+void PreviewSession::stop_waiting()
+{
+    if (state_ != State::waiting) return;
+    state_ = State::ready;
+    emit changed();
+}
 double PreviewSession::seconds() const { return rate_ ? double(frames_.load()) / rate_ : 0.0; }
 void PreviewSession::finish()
 {
@@ -78,7 +92,10 @@ void PreviewSession::finish()
             pcm_[i * 2 + 1] = recording_->right()[i];
         }
     } catch (const std::exception &error) { fail(QString::fromUtf8(error.what())); return; }
-    state_ = State::ready;
+    clip_timestamp_ = recording_->first_timestamp();
+    clip_frames_ = recording_->frames();
+    wait_started_ = os_gettime_ns();
+    state_ = State::waiting;
     emit changed();
 }
 void PreviewSession::play(const std::string &device, bool disable_monitoring)
@@ -119,6 +136,8 @@ void PreviewSession::cancel()
     stop_playback();
     monitors_.stop();
     recording_.reset();
+    clip_timestamp_ = 0;
+    clip_frames_ = 0;
     std::vector<float>().swap(pcm_);
     frames_.store(0);
     state_ = State::idle;
@@ -148,6 +167,10 @@ void PreviewSession::tick()
         // A stalled callback is not valid silence. This only bounds failure reporting.
         else if (packet_idle_ns(last_packet_, os_gettime_ns) > 5000000000ULL)
             fail(obs_module_text("PreviewCaptureError"));
+    }
+    if (state_ == State::waiting && wait_countdown() == 0) {
+        state_ = State::ready;
+        play(prepared_device_, prepared_monitor_off_);
     }
     if (state_ == State::playing) {
         monitors_.refresh();

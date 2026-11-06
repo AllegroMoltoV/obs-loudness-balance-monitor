@@ -93,13 +93,16 @@ private:
 	QComboBox *mix_preset_combo_{nullptr};
 
     QComboBox *preview_track_{nullptr};
+    QCheckBox *preview_manual_track_{nullptr};
+    QLabel *preview_track_info_{nullptr};
+    QLabel *preview_recorded_track_{nullptr};
     QComboBox *preview_device_{nullptr};
     QCheckBox *preview_monitor_{nullptr};
     QLabel *preview_status_{nullptr};
     QPushButton *preview_record_{nullptr};
     QPushButton *preview_play_{nullptr};
-    QPushButton *preview_cancel_{nullptr};
     QPushButton *preview_refresh_{nullptr};
+    bool preview_has_played_{false};
     std::unique_ptr<PreviewSession> preview_;
 
 	// Core components
