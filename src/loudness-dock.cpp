@@ -428,8 +428,7 @@ void LoudnessDock::update_preview()
         break;
     case State::ready:
         message = QString::fromUtf8(obs_module_text("PreviewReady")).arg(preview_->seconds(), 0, 'f', 1);
-        message += "
-";
+        message += QChar(10);
         message += obs_module_text(preview_monitor_->isChecked() ? "PreviewMonitorNotice" : "PreviewOverlapNotice");
         break;
     case State::playing: message = obs_module_text("PreviewPlaying"); break;
