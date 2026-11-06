@@ -264,7 +264,7 @@ static bool start_loopback()
 #endif
 }
 
-static bool save_loopback(const QString &label)
+static bool save_loopback([[maybe_unused]] const QString &label)
 {
 #ifdef _WIN32
     if (!preview_check(bool(loopback), "loopback observer missing")) return false;
@@ -328,8 +328,9 @@ static void preview_test()
     const int index = device->findData(wanted);
     if (!preview_check(index >= 0, "explicit preview device unavailable")) return;
     device->setCurrentIndex(index);
-    manual->setChecked(true);
-    track->setCurrentIndex(track->findData(0));
+    if (!preview_check(!manual->isChecked() && !track->isEnabled(),
+                       "new preview settings did not default to automatic stream track")) return;
+    observations.insert("preview_default_automatic_track", true);
     monitor->setChecked(true);
     obs_source_set_audio_mixers(voice, 1);
     obs_source_set_audio_mixers(bgm, 1);
@@ -415,7 +416,7 @@ static void preview_test()
             if (test_case == "output-failure" && play->text() != product_text("PreviewStopWaiting") &&
                 play->text() != product_text("PreviewStop")) {
                 if (!preview_check(record->isEnabled() && play->isVisible() && obs_source_get_monitoring_enabled(voice) &&
-                                   !status->text().startsWith(product_text("PreviewReady").arg("2.0")),
+                                   !status->text().startsWith(product_text("PreviewReady").arg(QString::number(double(expected_pcm.size() / 2) / evidence_rate, 'f', 1))),
                                    "output failure did not restore monitoring")) return;
                 if (!save_loopback("output-failure")) return;
                 observations.insert("preview_output_failure_message", status->text());
