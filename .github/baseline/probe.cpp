@@ -17,6 +17,8 @@
 #include <QProgressBar>
 #include <QSlider>
 #include <QTimer>
+#include <QPushButton>
+#include <QLabel>
 #include <array>
 #include <cmath>
 
@@ -100,6 +102,84 @@ static bool inspect_settings(bool configure)
            sliders.front()->value() == -35 && balances.front()->value() == 8.0 && preset_combo->currentIndex() == 1;
 }
 
+
+static bool preview_check(bool condition, const char *reason)
+{
+    if (!condition) finish(false, QString::fromUtf8(reason));
+    return condition;
+}
+
+static void preview_test()
+{
+    auto *record = dock->findChild<QPushButton *>("previewRecord");
+    auto *play = dock->findChild<QPushButton *>("previewPlay");
+    auto *cancel = dock->findChild<QPushButton *>("previewCancel");
+    auto *device = dock->findChild<QComboBox *>("previewDevice");
+    auto *monitor = dock->findChild<QCheckBox *>("previewMonitorOff");
+    auto *status = dock->findChild<QLabel *>("previewStatus");
+    if (!preview_check(record && play && cancel && device && monitor && status, "preview controls missing")) return;
+    const QString wanted = qEnvironmentVariable("LBM_PREVIEW_DEVICE");
+    const int index = device->findData(wanted);
+    if (!preview_check(index >= 0, "explicit preview device unavailable")) return;
+    device->setCurrentIndex(index);
+    monitor->setChecked(true);
+    obs_source_set_audio_mixers(voice, 1);
+    obs_source_set_audio_mixers(bgm, 1);
+    record->click();
+    if (!preview_check(!record->isEnabled() && !play->isEnabled(), "countdown did not start")) return;
+    QTimer::singleShot(1000, dock, [=] {
+        if (finished) return;
+        preview_check(!record->isEnabled() && status->text().contains("Recording starts"), "countdown not retained");
+    });
+    QTimer::singleShot(5500, dock, [=] {
+        if (finished) return;
+        if (!preview_check(record->isEnabled() && record->text() == "Finish recording", "recording did not start")) return;
+        record->click();
+        if (!preview_check(play->isEnabled() && status->text().contains("Recorded"), "manual recording did not freeze")) return;
+        observations.insert("preview_recorded", status->text());
+        // End only these synthetic sources, as an end user ends external audio before preview.
+        producer->stop();
+        obs_source_set_monitoring_enabled(voice, true);
+        play->click();
+        if (!preview_check(play->text() == "Stop preview" && !obs_source_get_monitoring_enabled(voice), "monitor was not disabled for preview")) return;
+        QTimer::singleShot(6000, dock, [=] {
+            if (finished) return;
+            if (!preview_check(play->text() == "Preview" && play->isEnabled() &&
+                               status->text().contains("Recorded") && obs_source_get_monitoring_enabled(voice),
+                               "natural playback completion or monitor restore failed")) return;
+            observations.insert("preview_natural_end", true);
+            play->click();
+            QTimer::singleShot(300, dock, [=] {
+                if (finished) return;
+                if (!preview_check(play->text() == "Stop preview", "replay did not start")) return;
+                play->click();
+                if (!preview_check(play->text() == "Preview" && obs_source_get_monitoring_enabled(voice), "cancel did not restore monitoring")) return;
+                observations.insert("preview_replay_stop", true);
+                monitor->setChecked(false);
+                play->click();
+                if (!preview_check(obs_source_get_monitoring_enabled(voice), "opt-out changed monitoring")) return;
+                QTimer::singleShot(300, dock, [=] {
+                    if (finished) return;
+                    play->click();
+                    if (!preview_check(obs_source_get_monitoring_enabled(voice), "opt-out stop changed monitoring")) return;
+                    monitor->setChecked(true);
+                    record->click();
+                    if (!preview_check(!record->isEnabled() && !play->isEnabled(), "rerecord countdown did not start")) return;
+                    cancel->click();
+                    if (!preview_check(record->isEnabled() && !play->isEnabled(), "record cancellation retained clip")) return;
+                    observations.insert("preview_opt_out_and_rerecord_cancel", true);
+                    observations.insert("preview_rate", int(audio_output_get_sample_rate(obs_get_audio())));
+                    observations.insert("preview_device", wanted);
+                    obs_source_set_monitoring_enabled(voice, false);
+                    dock_container->resize(440, 1000);
+                    if (!preview_check(dock_container->grab().save(result_dir + "/preview.png"), "preview screenshot failed")) return;
+                    finish(true, "preview countdown/manual capture/playback/replay/stop/monitor restore/opt-out/cancel passed");
+                });
+            });
+        });
+    });
+}
+
 static void inspect_meter()
 {
     int responding = 0;
@@ -114,6 +194,7 @@ static void inspect_meter()
     }
     if (phase == "restore") dock_container->hide();
     observations.insert("saved_dock_visible", dock_container->isVisible());
+    if (!qEnvironmentVariable("LBM_PREVIEW_DEVICE").isEmpty()) { preview_test(); return; }
     finish(true, "settings and visibility checked; voice/BGM meters responded");
 }
 
