@@ -93,7 +93,7 @@ def build(extra):
     run(['zsh', '.github/scripts/package-macos', '--config', 'RelWithDebInfo', '--package'], env=build_env)
     # Enable the diagnostic module only after the normal product artifact is finalized.
     run(['cmake', '--preset', 'macos-ci', '-DENABLE_BASELINE_PROBE=ON', *extra], env=build_env)
-    run(['cmake', '--build', 'build_macos', '--config', 'RelWithDebInfo', '--target', 'lbm-baseline-probe', '--parallel'], env=build_env)
+    run(['cmake', '--build', 'build_macos', '--config', 'RelWithDebInfo', '--target', 'lbm-baseline-probe', 'lbm-preview-core', '--parallel'], env=build_env)
     bundle = expand_distribution(spec)
     binary = bundle / 'Contents/MacOS/loudness-balance-monitor'
     architectures = run(['lipo', '-archs', binary]).decode().split()
