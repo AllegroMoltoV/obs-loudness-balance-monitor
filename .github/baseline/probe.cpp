@@ -147,10 +147,16 @@ static void preview_test()
         if (finished) return;
         preview_check(!record->isEnabled() && (status->text() == product_text("PreviewCountdown").arg(2) || status->text() == product_text("PreviewCountdown").arg(3)), "countdown not retained");
     });
-    QTimer::singleShot(5500, dock, [=] {
+    const bool automatic = qEnvironmentVariable("LBM_PREVIEW_CASE") == "automatic";
+    QTimer::singleShot(automatic ? 34500 : 5500, dock, [=] {
         if (finished) return;
-        if (!preview_check(record->isEnabled() && record->text() == product_text("PreviewFinish"), "recording did not start")) return;
-        record->click();
+        if (!automatic) {
+            if (!preview_check(record->isEnabled() && record->text() == product_text("PreviewFinish"), "recording did not start")) return;
+            record->click();
+        } else {
+            if (!preview_check(status->text().startsWith(product_text("PreviewReady").arg("30.0")), "automatic 30 second limit failed")) return;
+            observations.insert("preview_automatic_30_seconds", true);
+        }
         if (!preview_check(play->isEnabled() && record->text() == product_text("PreviewRerecord"), "manual recording did not freeze")) return;
         const QString ready_message = status->text();
         observations.insert("preview_recorded", ready_message);
@@ -159,7 +165,11 @@ static void preview_test()
         obs_source_set_monitoring_enabled(voice, true);
         play->click();
         if (!preview_check(play->text() == product_text("PreviewStop") && !obs_source_get_monitoring_enabled(voice), "monitor was not disabled for preview")) return;
-        QTimer::singleShot(6000, dock, [=] {
+        if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "recording-interrupt") {
+            QTimer::singleShot(300, dock, [] { obs_frontend_recording_start(); });
+            return;
+        }
+        QTimer::singleShot(automatic ? 34000 : 6000, dock, [=] {
             if (finished) return;
             if (!preview_check(play->text() == product_text("PreviewPlay") && play->isEnabled() &&
                                status->text() == ready_message && obs_source_get_monitoring_enabled(voice),
@@ -302,6 +312,26 @@ static void inspect_dock()
 
 static void event(obs_frontend_event e, void *)
 {
+    if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "recording-interrupt" && voice && !finished) {
+        if (e == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
+            auto *record = dock->findChild<QPushButton *>("previewRecord");
+            auto *play = dock->findChild<QPushButton *>("previewPlay");
+            if (!preview_check(!record->isEnabled() && !play->isEnabled() &&
+                               obs_source_get_monitoring_enabled(voice), "recording start failed to stop preview and restore monitor")) return;
+            observations.insert("preview_recording_start_interrupt", true);
+            QTimer::singleShot(1200, dock, [] { obs_frontend_recording_stop(); });
+        }
+        if (e == OBS_FRONTEND_EVENT_RECORDING_STOPPED) {
+            QTimer::singleShot(300, dock, [] {
+                if (finished) return;
+                auto *record = dock->findChild<QPushButton *>("previewRecord");
+                auto *play = dock->findChild<QPushButton *>("previewPlay");
+                if (!preview_check(record->isEnabled() && !play->isEnabled(), "interrupted recording retained preview clip")) return;
+                obs_source_set_monitoring_enabled(voice, false);
+                finish(true, "actual OBS recording interrupted preview and restored monitor");
+            });
+        }
+    }
     if (e == OBS_FRONTEND_EVENT_FINISHED_LOADING)
         QTimer::singleShot(1000, static_cast<QMainWindow *>(obs_frontend_get_main_window()), inspect_dock);
 }
