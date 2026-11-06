@@ -37,10 +37,8 @@ static uint64_t position = 0;
 static uint64_t origin = 0;
 static bool finished = false;
 
-static void finish(bool passed, const QString &reason)
+static void finish_deferred(bool passed, const QString &reason)
 {
-    if (finished) return;
-    finished = true;
     if (producer) { producer->stop(); producer->deleteLater(); producer = nullptr; }
     if (voice) { obs_source_release(voice); voice = nullptr; }
     if (bgm) { obs_source_release(bgm); bgm = nullptr; }
@@ -67,7 +65,25 @@ static void finish(bool passed, const QString &reason)
     blog(passed ? LOG_INFO : LOG_ERROR, "LBM_BASELINE %s phase=%s %s", passed ? "PASS" : "FAIL",
          phase.toUtf8().constData(), reason.toUtf8().constData());
     auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-    if (window) window->close();
+    if (!window) return;
+    // Leave frontend event dispatch before stopping outputs or destroying OBS.
+    if (obs_frontend_recording_active()) obs_frontend_recording_stop();
+    auto *shutdown = new QTimer(window);
+    QObject::connect(shutdown, &QTimer::timeout, window, [window, shutdown] {
+        if (obs_frontend_recording_active()) return;
+        shutdown->stop();
+        shutdown->deleteLater();
+        window->close();
+    });
+    shutdown->start(50);
+}
+
+static void finish(bool passed, const QString &reason)
+{
+    if (finished) return;
+    finished = true;
+    auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+    QTimer::singleShot(0, window, [passed, reason] { finish_deferred(passed, reason); });
 }
 
 static bool inspect_settings(bool configure)
@@ -163,6 +179,32 @@ static void preview_test()
         // End only these synthetic sources, as an end user ends external audio before preview.
         producer->stop();
         obs_source_set_monitoring_enabled(voice, true);
+        if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "output-failure") {
+            device->addItem("Unavailable test endpoint", "{0.0.0.00000000}.{00000000-0000-0000-0000-000000000000}");
+            device->setCurrentIndex(device->count() - 1);
+            play->click();
+            if (!preview_check(!obs_source_get_monitoring_enabled(voice), "failed output did not acquire monitor control")) return;
+            QTimer::singleShot(1500, dock, [=] {
+                if (finished) return;
+                if (!preview_check(play->isEnabled() && play->text() == product_text("PreviewPlay") &&
+                                   obs_source_get_monitoring_enabled(voice) && status->text() != ready_message,
+                                   "failed output did not report error and restore monitor")) return;
+                observations.insert("preview_output_failure_restored", true);
+                observations.insert("preview_output_failure_message", status->text());
+                device->setCurrentIndex(device->findData(wanted));
+                play->click();
+                QTimer::singleShot(6000, dock, [=] {
+                    if (finished) return;
+                    if (!preview_check(play->isEnabled() && play->text() == product_text("PreviewPlay") &&
+                                       obs_source_get_monitoring_enabled(voice) && status->text() == ready_message,
+                                       "valid device retry failed after output error")) return;
+                    observations.insert("preview_output_failure_retry", true);
+                    obs_source_set_monitoring_enabled(voice, false);
+                    finish(true, "output failure restored monitor and valid device replay succeeded");
+                });
+            });
+            return;
+        }
         play->click();
         if (!preview_check(play->text() == product_text("PreviewStop") && !obs_source_get_monitoring_enabled(voice), "monitor was not disabled for preview")) return;
         if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "recording-interrupt") {
@@ -314,12 +356,22 @@ static void event(obs_frontend_event e, void *)
 {
     if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "recording-interrupt" && voice && !finished) {
         if (e == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
-            auto *record = dock->findChild<QPushButton *>("previewRecord");
             auto *play = dock->findChild<QPushButton *>("previewPlay");
-            if (!preview_check(!record->isEnabled() && !play->isEnabled() &&
-                               obs_source_get_monitoring_enabled(voice), "recording start failed to stop preview and restore monitor")) return;
+            const bool restored = obs_source_get_monitoring_enabled(voice);
+            observations.insert("monitor_restored_at_recording_started", restored);
+            if (!preview_check(!play->isEnabled() && play->text() == product_text("PreviewPlay") && restored,
+                               "recording start failed to stop preview and restore monitor")) return;
             observations.insert("preview_recording_start_interrupt", true);
-            QTimer::singleShot(1200, dock, [] { obs_frontend_recording_stop(); });
+            // The product refreshes output-dependent controls on its 100 ms UI timer.
+            QTimer::singleShot(300, dock, [] {
+                if (finished) return;
+                auto *record = dock->findChild<QPushButton *>("previewRecord");
+                auto *play = dock->findChild<QPushButton *>("previewPlay");
+                if (!preview_check(obs_frontend_recording_active() && !record->isEnabled() && !play->isEnabled(),
+                                   "recording controls did not become blocked")) return;
+                observations.insert("recording_controls_blocked", true);
+                obs_frontend_recording_stop();
+            });
         }
         if (e == OBS_FRONTEND_EVENT_RECORDING_STOPPED) {
             QTimer::singleShot(300, dock, [] {
