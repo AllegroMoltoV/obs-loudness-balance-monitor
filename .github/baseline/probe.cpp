@@ -107,8 +107,7 @@ static void inspect_meter()
         if (bar->value() > 0) ++responding;
     }
     observations.insert("responding_meters", responding);
-    auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-    const bool screenshot = window->grab().save(result_dir + "/dock.png");
+    const bool screenshot = dock_container->grab().save(result_dir + "/dock.png");
     if (responding < 2 || !screenshot || !dock->isVisible()) {
         finish(false, "voice/BGM meter response or visible screenshot missing");
         return;
@@ -174,6 +173,15 @@ static void inspect_dock()
         if (!voice || !bgm) { finish(false, "test source creation failed"); return; }
         obs_source_set_audio_mixers(voice, 0);
         obs_source_set_audio_mixers(bgm, 0);
+        obs_source_t *scene_source = obs_frontend_get_current_scene();
+        obs_scene_t *scene = scene_source ? obs_scene_from_source(scene_source) : nullptr;
+        if (!scene) {
+            if (scene_source) obs_source_release(scene_source);
+            finish(false, "isolated scene missing"); return;
+        }
+        const bool attached = obs_scene_add(scene, voice) && obs_scene_add(scene, bgm);
+        obs_source_release(scene_source);
+        if (!attached) { finish(false, "test sources could not be attached to scene"); return; }
         if (!QMetaObject::invokeMethod(dock, "on_refresh_sources", Qt::DirectConnection) || !inspect_settings(true)) {
             finish(false, "setup controls unavailable"); return;
         }
