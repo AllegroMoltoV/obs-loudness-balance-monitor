@@ -1,4 +1,5 @@
 #include "../../src/preview-recording.h"
+#include "../../src/preview-clock.h"
 using lbm::Recording;
 #include <array>
 #include <iostream>
@@ -38,4 +39,16 @@ static void core(uint32_t rate) {
  std::cout<<"PASS core rate="<<rate<<" frames="<<total<<" bytes="<<total*8<<" exact_pcm replay=3 gap_duplicate_timeout_cancel_silence=pass\n";
 }
 
-int main(){try{core(44100);core(48000);}catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}return 0;}
+static void clock_regression() {
+ std::atomic<uint64_t> last{1000000000ULL};
+ const auto elapsed=lbm::packet_idle_ns(last,[&] {
+  last.store(1000000002ULL,std::memory_order_release);
+  return 1000000001ULL;
+ });
+ check(elapsed==1,"concurrent packet update caused false timeout");
+ last.store(1000000000ULL);
+ check(lbm::packet_idle_ns(last,[]{return 7000000000ULL;})==6000000000ULL,"real stall hidden");
+ check(lbm::packet_idle_ns(last,[]{return 1000000000ULL;})==0,"equal clocks");
+ std::cout<<"PASS packet clock concurrent_update real_stall equal_clock"<<std::endl;
+}
+int main(){try{clock_regression();core(44100);core(48000);}catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}return 0;}

@@ -1,5 +1,6 @@
 #include "preview-session.h"
 #include "preview-output.h"
+#include "preview-clock.h"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <util/platform.h>
@@ -145,7 +146,7 @@ void PreviewSession::tick()
     if (state_ == State::recording) {
         if (recording_->done()) finish();
         // A stalled callback is not valid silence. This only bounds failure reporting.
-        else if (os_gettime_ns() - last_packet_.load(std::memory_order_acquire) > 5000000000ULL)
+        else if (packet_idle_ns(last_packet_, os_gettime_ns) > 5000000000ULL)
             fail(obs_module_text("PreviewCaptureError"));
     }
     if (state_ == State::playing) {
