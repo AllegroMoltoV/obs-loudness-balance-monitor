@@ -1,4 +1,5 @@
-"""Exact submitted/loopback PCM audit. No gain tolerance or latency guarantee.
+"""Submitted/loopback PCM audit with the user-approved leading 10ms attenuation limitation.
+All later PCM and interval coverage remain exact; no latency guarantee.
 
 WASAPI flags: Windows SDK 10.0.26100.0 um/audioclient.h:199-201.
 Device positions, not concatenated packet bytes, establish capture continuity.
@@ -80,7 +81,7 @@ def mismatch_diagnostic(submitted, captured, source_frame, capture_frame):
     return {"kind": "value_change_or_unresolved_edit", "resync_search_frames": window}
 
 
-def compare_pcm(submitted, captured):
+def compare_pcm(submitted, captured, startup_frames=0):
     a, b = content_stats(submitted), content_stats(captured)
     result = {"submitted": a, "loopback": b, "status": "unverified",
               "alignment": None, "all_submitted_pcm_equal": False}
@@ -91,6 +92,7 @@ def compare_pcm(submitted, captured):
     if first is None or a["frames"] - first < 64:
         result["reason"] = "no nonzero 64-frame alignment anchor"
         return result
+    first = max(first, startup_frames)
     needle = submitted[first * FRAME:(first + 64) * FRAME]
     hits = unique_hit(captured, needle)
     if len(hits) != 1 or unique_hit(submitted, needle) != [first]:
@@ -108,6 +110,8 @@ def compare_pcm(submitted, captured):
         result["reason"] = "aligned interval outside capture"
         return result
     unequal, first_bad = 0, None
+    outside_startup = 0
+    startup_attenuation_only = True
     for pos in range(start, end, CHUNK // FRAME):
         stop = min(end, pos + CHUNK // FRAME)
         left = submitted[pos * FRAME:stop * FRAME]
@@ -117,6 +121,14 @@ def compare_pcm(submitted, captured):
         for local in range(0, len(left), FRAME):
             if left[local:local + FRAME] != right[local:local + FRAME]:
                 unequal += 1
+                frame = pos + local // FRAME
+                if frame >= startup_frames:
+                    outside_startup += 1
+                else:
+                    reference = struct.unpack("<ff", left[local:local + FRAME])
+                    actual = struct.unpack("<ff", right[local:local + FRAME])
+                    startup_attenuation_only &= all(
+                        x * y >= 0 and abs(y) <= abs(x) for x, y in zip(reference, actual))
                 if first_bad is None:
                     first_bad = pos + local // FRAME
     missing_head, missing_tail = start, a["frames"] - end
@@ -137,6 +149,12 @@ def compare_pcm(submitted, captured):
     extras_silent = head["first_nonzero_frame"] is None and tail["first_nonzero_frame"] is None
     if exact and extras_silent:
         result["status"] = "exact_pcm"
+    elif startup_frames and unequal and not outside_startup and startup_attenuation_only and not missing_head and not missing_tail and extras_silent:
+        result["status"] = "accepted_startup_attenuation"
+        result["known_limitation"] = {"approved_window_frames": startup_frames,
+                                     "different_frames": unequal,
+                                     "remainder_exact": True,
+                                     "reason": "User accepted leading 10ms amplitude ramp for balance listening"}
     else:
         result["reason"] = "PCM mismatch, incomplete coverage, or nonzero audio outside submitted interval"
     return result
@@ -201,6 +219,16 @@ def selftest():
     assert compare_pcm(submitted, silence + stretched + silence)["status"] == "unverified"
     swap = b"".join(capture[i + 4:i + 8] + capture[i:i + 4] for i in range(0, len(capture), FRAME))
     assert compare_pcm(submitted, swap)["swapped_channel_anchor_hits"]
+    ramp = b"".join(struct.pack("<ff", left * i / 32, right * i / 32)
+                    for i, (left, right) in enumerate(struct.iter_unpack("<ff", signal[:32 * FRAME])))
+    attenuated = silence + ramp + submitted[32 * FRAME:] + silence
+    assert compare_pcm(submitted, attenuated, 32)["status"] == "accepted_startup_attenuation"
+    later_damage = bytearray(attenuated)
+    later_damage[(80 + 100) * FRAME:(80 + 101) * FRAME] = bytes(FRAME)
+    assert compare_pcm(submitted, later_damage, 32)["status"] == "unverified"
+    amplified = silence + struct.pack("<ff", 1.0, -1.0) + submitted[FRAME:] + silence
+    assert compare_pcm(submitted, amplified, 32)["status"] == "unverified"
+    assert compare_pcm(submitted, attenuated[:500 * FRAME], 32)["status"] == "unverified"
     event = lambda first, count, pos, flag=0: dict(first_float=first * 2, frames=count,
         device_position_frames=pos, flags=flag, release_hresult=0, qpc_position_100ns=pos * 200)
     good = [event(0, 80, 100, 3), event(80, len(capture) // FRAME - 80, 180)]
@@ -252,9 +280,12 @@ def audit_directory(directory):
         if name in ("waiting-stopped", "output-failure"):
             item["silence"] = stats
             item["passed"] = not issues and stats["first_nonzero_frame"] is None
+        elif name == "playback-stopped":
+            item["interrupted_observation_only"] = True
+            item["silence"] = stats
         elif name.startswith("playback-"):
-            item["comparison"] = compare_pcm(expected, pcm)
-            item["passed"] = not issues and item["comparison"]["status"] == "exact_pcm"
+            item["comparison"] = compare_pcm(expected, pcm, int(meta["rate"]) // 100)
+            item["passed"] = not issues and item["comparison"]["status"] in ("exact_pcm", "accepted_startup_attenuation")
         elif name == "recording-interrupted":
             # A cancelled playback intentionally lacks the tail. Keep full expected PCM
             # and report observed coverage without accepting it as a full playback.
@@ -272,7 +303,12 @@ def audit_directory(directory):
             result["reason"] = "different-audio rerecord verification missing"
             return result
         required += ["playback-3"]
-    if observations.get("preview_output_failure_restored"):
+    if observations.get("preview_case") == "output-failure":
+        if not (observations.get("preview_output_failure_restored") and
+                observations.get("preview_output_failure_retry_started") and
+                observations.get("preview_output_failure_message")):
+            result["reason"] = "required output failure and retry observations missing"
+            return result
         required += ["output-failure"]
     result["required_captures"] = required
     result["passed"] = result["ui_passed"] and all(name in captures and captures[name]["passed"] for name in required)

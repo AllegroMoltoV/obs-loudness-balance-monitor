@@ -148,6 +148,14 @@ void LoudnessDock::setup_ui()
     preview_recorded_track_ = wrapped_label();
     preview_recorded_track_->setObjectName("previewRecordedTrack");
     preview_layout->addWidget(preview_recorded_track_);
+    preview_realtime_ = wrapped_label();
+    preview_realtime_->setObjectName("previewRealtime");
+    preview_average_ = wrapped_label();
+    preview_average_->setObjectName("previewAverage");
+    preview_realtime_->setToolTip(obs_module_text("PreviewAnalysisHelp"));
+    preview_average_->setToolTip(obs_module_text("PreviewAnalysisHelp"));
+    preview_layout->addWidget(preview_realtime_);
+    preview_layout->addWidget(preview_average_);
 
     // Stacked actions keep their full text visible in a narrow OBS dock.
     preview_record_ = new QPushButton();
@@ -203,6 +211,9 @@ void LoudnessDock::setup_ui()
                 ? PreviewTrackChoice{preview_track_->currentData().toInt(), {}}
                 : resolve_preview_track();
             if (choice.track < 0) { update_preview(); return; }
+            const auto &config = analyzer_->config();
+            preview_->configure_analysis(capture_manager_->voice_source_name(), capture_manager_->bgm_source_names(),
+                config.vad_threshold.load(), config.balance_target.load(), config.hysteresis.load());
             preview_has_played_ = false;
             preview_->prepare(unsigned(choice.track), preview_device_->currentData().toString().toStdString(),
                               preview_monitor_->isChecked());
@@ -482,6 +493,28 @@ void LoudnessDock::update_preview()
     if (!preview_manual_track_ || !preview_monitor_) return;
     using State = PreviewSession::State;
     const auto state = preview_->state();
+    const bool has_recording = preview_->recorded_frames() != 0;
+    auto show_analysis = [](QLabel *label, const char *title, double voice, double bgm, std::optional<Status> status) {
+        const auto number = [](double v) { return std::isfinite(v) ? QString::number(v, 'f', 1) : QString("--"); };
+        const char *key = !status ? "PreviewAnalysisUnrated" :
+            *status == Status::OK ? "PreviewAnalysisGreen" : *status == Status::WARN ? "PreviewAnalysisYellow" : "PreviewAnalysisRed";
+        const char *color = !status ? "#888888" :
+            *status == Status::OK ? "#4CAF50" : *status == Status::WARN ? "#FFC107" : "#F44336";
+        label->setText(QString::fromUtf8(obs_module_text("PreviewAnalysisRow"))
+            .arg(obs_module_text(title), number(voice), number(bgm), obs_module_text(key)));
+        label->setStyleSheet(QString("QLabel { border-left: 4px solid %1; padding: 4px; }").arg(color));
+    };
+    preview_realtime_->setVisible(has_recording);
+    preview_average_->setVisible(has_recording);
+    if (has_recording) {
+        const auto *point = preview_->analysis_point();
+        show_analysis(preview_realtime_, "PreviewAnalysisRealtime", point ? point->voice_lufs : -HUGE_VAL,
+            point ? point->bgm_lufs : -HUGE_VAL, point ? point->balance_status : std::nullopt);
+        const auto mean = preview_->analysis_summary();
+        show_analysis(preview_average_, "PreviewAnalysisAverage", mean.voice_lufs, mean.bgm_lufs, mean.balance_status);
+        if (!preview_->analysis_notice().isEmpty())
+            preview_average_->setText(preview_average_->text() + QChar(10) + preview_->analysis_notice());
+    }
     if (state == State::playing) preview_has_played_ = true;
     const bool busy = state == State::preparing || state == State::recording ||
                       state == State::waiting || state == State::playing;

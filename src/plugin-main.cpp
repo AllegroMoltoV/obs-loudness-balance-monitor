@@ -3,6 +3,7 @@
 #include <plugin-support.h>
 
 #include "loudness-dock.h"
+#include "preview-category-capture.h"
 
 #include <QByteArray>
 #include <QMainWindow>
@@ -69,7 +70,8 @@ static void on_frontend_event(enum obs_frontend_event event, void *private_data)
 
 extern "C" bool obs_module_load(void)
 {
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
+	lbm::register_preview_category_capture();
+    obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 

@@ -5,6 +5,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 namespace lbm {
@@ -67,8 +68,9 @@ static void refill(void* data, AudioQueueRef queue, AudioQueueBufferRef buffer)
     if (state.error == noErr) state.submitted += bytes;
 }
 } // namespace
-bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& device, const std::atomic<bool>& cancel, std::string& error)
+bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& device, const std::atomic<bool>& cancel, std::string& error, std::atomic<double>* position)
 {
+    if (position) position->store(-1.0);
     CFStringRef uid = CFStringCreateWithCString(nullptr, device.c_str(), kCFStringEncodingUTF8);
     if (!uid) throw std::runtime_error("Invalid output device UID");
     const AudioDeviceID id = find_device(uid);
@@ -94,12 +96,29 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
     }
     int result = 2;
     bool draining = false;
+    AudioQueueTimelineRef timeline = nullptr;
+    if (position && state.error == noErr && AudioQueueCreateTimeline(state.value, &timeline) != noErr)
+        timeline = nullptr;
+    const double duration = double(pcm.size() / 2) / rate;
+    double last_position = 0.0;
     const auto begin = Clock::now();
     if (state.error == noErr && !cancel.load()) {
         state.error = AudioQueueStart(state.value, nullptr);
         while (state.error == noErr && Clock::now() - begin < std::chrono::duration<double>(double(pcm.size() / 2) / rate + 10.0)) {
             if (cancel.load()) { result = 3; break; }
             if (!device_matches(id, uid)) { error = "Output device disappeared or changed"; break; }
+            if (position && timeline) {
+                AudioTimeStamp timestamp{};
+                Boolean discontinuity = false;
+                const OSStatus status = AudioQueueGetCurrentTime(state.value, timeline, &timestamp, &discontinuity);
+                if (status == noErr && !discontinuity && (timestamp.mFlags & kAudioTimeStampSampleTimeValid) &&
+                    std::isfinite(timestamp.mSampleTime) && timestamp.mSampleTime >= 0.0) {
+                    last_position = std::clamp(timestamp.mSampleTime / rate, last_position, duration);
+                    position->store(last_position);
+                } else {
+                    position->store(-1.0);
+                }
+            }
             if (!draining && state.submitted == pcm.size() * sizeof(float)) {
                 state.accepting = false;
                 state.error = AudioQueueStop(state.value, false);
@@ -125,6 +144,7 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
     }
     CFRelease(uid);
     if (result == 2 && error.empty()) error = "AudioQueue playback failed or timed out: " + std::to_string(state.error);
+    if (result == 0 && !cancel.load() && position) position->store(duration);
     return result == 0;
 }
 } // namespace lbm

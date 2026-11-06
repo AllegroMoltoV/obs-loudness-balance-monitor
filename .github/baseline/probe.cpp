@@ -26,6 +26,7 @@
 #include <thread>
 #include <functional>
 #include <media-io/audio-resampler.h>
+#include "preview-category-probe.h"
 #ifdef _WIN32
 #include "loopback-probe.h"
 #endif
@@ -35,6 +36,9 @@ static constexpr const char *voice_name = "LBM baseline voice";
 static constexpr const char *bgm_name = "LBM baseline bgm";
 static obs_source_t *voice = nullptr;
 static obs_source_t *bgm = nullptr;
+static obs_source_t *numeric_bgm = nullptr;
+static uint64_t numeric_start = UINT64_MAX;
+static void numeric_stop();
 static QTimer *producer = nullptr;
 static QWidget *dock = nullptr;
 static QDockWidget *dock_container = nullptr;
@@ -52,6 +56,7 @@ static size_t observed_frames = 0;
 static bool observed_overflow = false, observer_attached = false;
 static uint32_t evidence_rate = 0;
 static unsigned evidence_clip = 1;
+static unsigned evidence_track = 0;
 static std::vector<float> first_clip_pcm;
 #ifdef _WIN32
 static std::unique_ptr<LoopbackProbe> loopback;
@@ -74,7 +79,7 @@ static void observe_mix(void *, size_t, audio_data *packet)
 static void detach_observer()
 {
     if (!observer_attached) return;
-    std::thread remove([] { obs_remove_raw_audio_callback(0, observe_mix, nullptr); });
+    std::thread remove([] { obs_remove_raw_audio_callback(evidence_track, observe_mix, nullptr); });
     remove.join();
     observer_attached = false;
 }
@@ -88,6 +93,7 @@ static bool save_bytes(const QString &path, const void *bytes, size_t count)
 
 static void stop_evidence()
 {
+    numeric_stop();
     detach_observer();
 #ifdef _WIN32
     if (loopback) {
@@ -105,6 +111,7 @@ static void finish_deferred(bool passed, const QString &reason)
     if (producer) { producer->stop(); producer->deleteLater(); producer = nullptr; }
     if (voice) { obs_source_release(voice); voice = nullptr; }
     if (bgm) { obs_source_release(bgm); bgm = nullptr; }
+    if (numeric_bgm) { obs_source_release(numeric_bgm); numeric_bgm = nullptr; }
     QJsonObject result{{"passed", passed}, {"reason", reason}, {"obs", obs_get_version_string()},
                        {"phase", phase}, {"observations", observations}};
 #ifdef __APPLE__
@@ -203,6 +210,11 @@ static bool preview_check(bool condition, const char *reason)
     }
     return condition;
 }
+
+#include "preview-preferences-probe.h"
+#include "preview-profile-probe.h"
+#include "preview-layout-probe.h"
+#include "preview-numeric-probe.h"
 
 static bool select_expected_pcm()
 {
@@ -327,18 +339,38 @@ static void preview_test()
     observations.insert("preview_case", test_case);
     const int index = device->findData(wanted);
     if (!preview_check(index >= 0, "explicit preview device unavailable")) return;
-    device->setCurrentIndex(index);
-    if (!preview_check(!manual->isChecked() && !track->isEnabled(),
-                       "new preview settings did not default to automatic stream track")) return;
-    observations.insert("preview_default_automatic_track", true);
-    monitor->setChecked(true);
-    obs_source_set_audio_mixers(voice, 1);
-    obs_source_set_audio_mixers(bgm, 1);
+    const bool restored = test_case == "restored-track";
+    const bool profile_track = test_case == "profile-track";
+    evidence_track = restored ? 2 : profile_track ? 3 : 0;
+    if (restored) {
+        if (!preview_check(device->currentData().toString() == wanted && manual->isChecked() &&
+                           track->currentData().toInt() == 2 && !monitor->isChecked(),
+                           "restored preview choices changed before recording")) return;
+        observations.insert("recording_uses_restored_preferences", true);
+    } else {
+        device->setCurrentIndex(index);
+        if (!preview_check(!manual->isChecked() && !track->isEnabled(),
+                           "automatic stream track selection unavailable")) return;
+        observations.insert("preview_default_automatic_track", !profile_track);
+        monitor->setChecked(test_case != "optout");
+    }
+    if (test_case == "analysis-unselected") {
+        QComboBox *selection = nullptr;
+        for (auto *combo : dock->findChildren<QComboBox *>())
+            if (combo->findData(QString::fromUtf8(obs_source_get_name(voice))) >= 0) { selection = combo; break; }
+        if (!preview_check(selection && selection->findData(QString()) >= 0, "voice selection missing")) return;
+        selection->setCurrentIndex(selection->findData(QString()));
+    }
+    const bool monitor_off = monitor->isChecked();
+    observations.insert("expected_recording_track", int(evidence_track + 1));
+    obs_source_set_audio_mixers(voice, 1u << evidence_track);
+    obs_source_set_audio_mixers(bgm, evidence_track ? 1 : 1u << evidence_track);
     if (test_case == "output-failure") {
         device->addItem("Unavailable test endpoint", "{0.0.0.00000000}.{00000000-0000-0000-0000-000000000000}");
         device->setCurrentIndex(device->count() - 1);
     }
     evidence_rate = audio_output_get_sample_rate(obs_get_audio());
+    if (test_case == "analysis-numeric" && !numeric_begin()) return;
     observed_mix.resize(size_t(evidence_rate) * 40 * 2);
     observed_packets.reserve(4000);
     audio_convert_info conversion{};
@@ -346,14 +378,10 @@ static void preview_test()
     conversion.format = AUDIO_FORMAT_FLOAT_PLANAR;
     conversion.speakers = SPEAKERS_STEREO;
     conversion.allow_clipping = false;
-    obs_add_raw_audio_callback(0, &conversion, observe_mix, nullptr);
+    obs_add_raw_audio_callback(evidence_track, &conversion, observe_mix, nullptr);
     observer_attached = true;
-    record->click();
-    if (!preview_check(record->isEnabled() && record->text() == product_text("PreviewCancelPreparation") && !play->isVisible(),
-                       "preparation controls did not update")) return;
-    dock_container->grab().save(result_dir + "/preview-preparing.png");
     struct Run {
-        int stage = 0;
+        int stage = -1;
         uint64_t started = os_gettime_ns(), since = 0, waiting = 0;
         bool seen_recording = false, seen_waiting_again = false;
     };
@@ -364,22 +392,51 @@ static void preview_test()
         const uint64_t now = os_gettime_ns();
         auto elapsed = [&](uint64_t since) { return double(now - since) / 1000000000.0; };
         const bool automatic = test_case == "automatic";
-        const bool waiting_stop = test_case == "waiting-stop" || test_case == "manual";
-        if (elapsed(run->started) > (automatic ? 85 : 45)) {
+        const bool waiting_stop = test_case == "waiting-stop" || test_case == "manual" || test_case == "analysis-sequence";
+        if (elapsed(run->started) > (automatic || test_case == "analysis-sequence" ? 85 : 45)) {
             preview_check(false, "preview scenario timed out"); return;
+        }
+        if (run->stage == -1) {
+            // Let the product's normal UI refresh enable the user action.
+            // This timeout bounds the test; it is not a product latency requirement.
+            if (!record->isEnabled()) {
+                if (elapsed(run->started) > 5.0)
+                    preview_check(false, "record button did not become enabled after device selection");
+                return;
+            }
+            observations.insert("device_selection_ready_seconds", elapsed(run->started));
+            record->click();
+            if (!preview_check(record->isEnabled() && record->text() == product_text("PreviewCancelPreparation") && !play->isVisible(),
+                               "preparation controls did not update")) return;
+            if (!preview_check(capture_preview_layout("preview-preparing"), "layout evidence save failed")) return;
+            run->started = now;
+            run->stage = 0;
+            return;
         }
         if (run->stage == 0) {
             if (record->text() == product_text("PreviewFinish")) {
                 if (!run->seen_recording) {
                     run->seen_recording = true; run->since = now;
+                    if (test_case == "analysis-numeric") numeric_start = position;
                     observations.insert("preparation_seconds", elapsed(run->started));
-                    dock_container->grab().save(result_dir + "/preview-recording.png");
+                    if (!preview_check(capture_preview_layout("preview-recording"), "layout evidence save failed")) return;
                 }
-                if (!automatic && elapsed(run->since) >= 2.0) record->click();
+                if (test_case == "analysis-inactive" && elapsed(run->since) >= 1.0 &&
+                    !observations.value("analysis_source_disabled").toBool()) {
+                    auto *current = obs_frontend_get_current_scene();
+                    auto *scene = current ? obs_scene_from_source(current) : nullptr;
+                    auto *item = scene ? obs_scene_find_source(scene, obs_source_get_name(bgm)) : nullptr;
+                    if (item) obs_sceneitem_set_visible(item, false);
+                    if (current) obs_source_release(current);
+                    if (!preview_check(item != nullptr, "BGM scene item missing")) return;
+                    observations.insert("analysis_source_disabled", true);
+                }
+                if (!automatic && elapsed(run->since) >= (test_case == "analysis-numeric" ? 12.0 : test_case == "analysis" || test_case == "analysis-sequence" ? 6.0 : 2.0)) record->click();
             }
             if (play->text() != product_text("PreviewStopWaiting") || !play->isVisible()) return;
             if (!preview_check(run->seen_recording && !record->isEnabled(), "waiting reached without recording")) return;
             if (!select_expected_pcm()) return;
+            if (test_case == "analysis-numeric" && !numeric_save()) return;
             if (evidence_clip == 1) first_clip_pcm = expected_pcm;
             else if (!preview_check(expected_pcm != first_clip_pcm, "rerecord retained the previous audio")) return;
             if (automatic && !preview_check(expected_pcm.size() / 2 == size_t(evidence_rate) * 30,
@@ -388,8 +445,13 @@ static void preview_test()
             obs_source_set_monitoring_enabled(voice, true);
             run->waiting = now;
             observations.insert("preview_automatic_30_seconds", automatic);
-            dock_container->grab().save(result_dir + "/preview-waiting.png");
+            if (!preview_check(capture_preview_layout("preview-waiting"), "layout evidence save failed")) return;
             if (!start_loopback()) return;
+            if (test_case == "waiting-interrupt") {
+                run->stage = 3;
+                QTimer::singleShot(300, dock, [] { obs_frontend_recording_start(); });
+                return;
+            }
             if (waiting_stop && evidence_clip == 1) {
                 play->click();
                 if (!preview_check(play->text() == product_text("PreviewPlay") && record->isEnabled(),
@@ -410,46 +472,113 @@ static void preview_test()
         }
         if (run->stage == 2) {
             if (play->text() == product_text("PreviewStopWaiting")) {
-                if (elapsed(run->waiting) >= 1.0) run->seen_waiting_again = true;
+                if (elapsed(run->waiting) >= 1.0 && !run->seen_waiting_again) {
+                    run->seen_waiting_again = true;
+                    if (!preview_check(capture_preview_layout("preview-waiting-settled"), "settled waiting layout save failed")) return;
+                }
                 return;
             }
-            if (test_case == "output-failure" && play->text() != product_text("PreviewStopWaiting") &&
-                play->text() != product_text("PreviewStop")) {
+            if (test_case == "output-failure" && !observations.value("preview_output_failure_restored").toBool()) {
+                // Failed device activation may briefly expose the playing state.
+                // Stay in the failure phase until the worker error reaches the UI.
+                if (play->text() == product_text("PreviewStop")) return;
                 if (!preview_check(record->isEnabled() && play->isVisible() && obs_source_get_monitoring_enabled(voice) &&
-                                   !status->text().startsWith(product_text("PreviewReady").arg(QString::number(double(expected_pcm.size() / 2) / evidence_rate, 'f', 1))),
+                                   !obs_source_get_monitoring_enabled(bgm) && status->text().contains("GetDevice HRESULT="),
                                    "output failure did not restore monitoring")) return;
                 if (!save_loopback("output-failure")) return;
                 observations.insert("preview_output_failure_message", status->text());
                 observations.insert("preview_output_failure_restored", true);
                 device->setCurrentIndex(device->findData(wanted));
                 if (!start_loopback()) return;
-                play->click(); run->stage = 3; run->since = now;
+                play->click(); run->since = now;
                 return;
             }
             if (play->text() != product_text("PreviewStop")) return;
-            if (!preview_check(!obs_source_get_monitoring_enabled(voice), "monitor not disabled during preview")) return;
+            if (!preview_check(obs_source_get_monitoring_enabled(voice) == !monitor_off &&
+                               !obs_source_get_monitoring_enabled(bgm), "monitor preference not respected during preview")) return;
+            if (test_case == "optout") observations.insert("preview_monitor_optout_preserved", true);
             if ((!waiting_stop || evidence_clip == 2) && !preview_check(run->seen_waiting_again,
                                                 "automatic playback skipped observable waiting")) return;
+            if (test_case == "output-failure") observations.insert("preview_output_failure_retry_started", true);
             observations.insert("waiting_seconds", elapsed(run->waiting));
-            dock_container->grab().save(result_dir + "/preview-playing.png");
+            if (!preview_check(capture_preview_layout("preview-playing"), "layout evidence save failed")) return;
             run->since = now; run->stage = 3;
             if (test_case == "recording-interrupt") QTimer::singleShot(300, dock, [] { obs_frontend_recording_start(); });
             return;
         }
         if (run->stage == 3) {
-            if (test_case == "recording-interrupt") return;
+            if (test_case == "analysis-sequence" && elapsed(run->since) >= 4.0 &&
+                play->text() == product_text("PreviewStop")) {
+                auto *live = dock->findChild<QLabel *>("previewRealtime");
+                auto *mean = dock->findChild<QLabel *>("previewAverage");
+                if (!preview_check(live && mean && !live->text().contains("--") && !mean->text().contains("--"),
+                    "sequence analysis unavailable")) return;
+                const QString key = QString("analysis_clip_%1").arg(evidence_clip);
+                if (!observations.contains(key)) {
+                    observations.insert(key, mean->text());
+                    if (evidence_clip == 2 && !preview_check(mean->text() != observations.value("analysis_clip_1").toString(),
+                        "rerecord retained previous analysis")) return;
+                }
+            }
+
+            if (test_case == "analysis-unselected" || test_case == "analysis-inactive") {
+                auto *live = dock->findChild<QLabel *>("previewRealtime");
+                auto *mean = dock->findChild<QLabel *>("previewAverage");
+                if (!preview_check(live && mean && live->isVisible() && mean->isVisible() &&
+                    live->text().contains("--") && mean->text().contains("--") &&
+                    mean->text().contains(product_text("PreviewAnalysisUnrated")) &&
+                    mean->text().contains(product_text(test_case == "analysis-unselected"
+                        ? "PreviewAnalysisSelectionMissing" : "PreviewAnalysisError")),
+                    "unavailable analysis reason or unrated values missing during playback")) return;
+                observations.insert("analysis_unselected_playback", true);
+                observations.insert("analysis_unselected_notice", mean->text());
+            }
+
+            if (test_case == "analysis" && elapsed(run->since) >= 4.0 &&
+                !observations.value("analysis_rows_observed").toBool()) {
+                auto *live = dock->findChild<QLabel *>("previewRealtime");
+                auto *mean = dock->findChild<QLabel *>("previewAverage");
+                if (!preview_check(live && mean && live->isVisible() && mean->isVisible() &&
+                    !live->text().contains("--") && !mean->text().contains("--") &&
+                    mean->text().contains(product_text("PreviewAnalysisYellow")),
+                    "recorded category values or average balance missing")) return;
+                observations.insert("analysis_realtime", live->text());
+                observations.insert("analysis_average", mean->text());
+                observations.insert("analysis_rows_observed", true);
+                if (!preview_check(capture_preview_layout("preview-analysis"), "analysis layout capture failed")) return;
+            }
+            if (test_case == "recording-interrupt" || test_case == "waiting-interrupt") return;
+            if (test_case == "playback-stop" && !observations.value("preview_manual_stop_restored").toBool() && elapsed(run->since) >= 0.3) {
+                if (!preview_check(play->text() == product_text("PreviewStop"), "playback ended before manual stop")) return;
+                play->click();
+                if (!preview_check(play->text() == product_text("PreviewReplay") && obs_source_get_monitoring_enabled(voice) &&
+                                   !obs_source_get_monitoring_enabled(bgm), "manual stop did not restore monitors")) return;
+                observations.insert("preview_manual_stop_restored", true);
+                run->since = now; run->stage = 7;
+                return;
+            }
             if (play->text() == product_text("PreviewStop")) return;
             if (!preview_check(play->isVisible() && play->isEnabled() && play->text() == product_text("PreviewReplay") &&
                                record->isEnabled() && obs_source_get_monitoring_enabled(voice),
                                "natural playback completion or monitor restoration failed")) return;
+            if (test_case == "analysis-sequence" &&
+                !preview_check(observations.contains(QString("analysis_clip_%1").arg(evidence_clip)),
+                    "recorded analysis observation missing")) return;
             run->since = now; run->stage = 4;
+            return;
+        }
+        if (run->stage == 7) {
+            if (elapsed(run->since) < 0.3) return;
+            if (!save_loopback("playback-stopped")) return;
+            if (!start_loopback()) return;
+            play->click(); run->since = now; run->stage = 3;
             return;
         }
         if (run->stage == 4) {
             if (elapsed(run->since) < 0.3) return;
             if (!save_loopback(evidence_clip == 1 ? "playback-1" : "playback-3")) return;
             observations.insert("preview_natural_end", true);
-            dock_container->grab().save(result_dir + "/preview-ready.png");
+            if (!preview_check(capture_preview_layout("preview-ready"), "layout evidence save failed")) return;
             if (!waiting_stop || evidence_clip == 2) {
                 if (evidence_clip == 2) {
                     observations.insert("preview_rerecord_different_audio", true);
@@ -461,16 +590,38 @@ static void preview_test()
                                        "preparation cancellation retained clip")) return;
                     observations.insert("preview_rerecord_cancel", true);
                 }
+                if (test_case == "output-failure" &&
+                    !preview_check(observations.value("preview_output_failure_restored").toBool() &&
+                                   observations.value("preview_output_failure_retry_started").toBool() &&
+                                   !observations.value("preview_output_failure_message").toString().isEmpty(),
+                                   "required failure and retry observations missing")) return;
                 obs_source_set_monitoring_enabled(voice, false);
                 obs_source_set_audio_mixers(voice, 0); obs_source_set_audio_mixers(bgm, 0);
+                if (qEnvironmentVariable("LBM_PREVIEW_HELP") == "1" &&
+                    !preview_check(check_preview_help_keyboard(), "section help keyboard verification failed")) return;
+                if (test_case == "analysis" &&
+                    !preview_check(observations.value("analysis_rows_observed").toBool(), "analysis observations missing")) return;
                 finish(true, "preview UI sequence passed; audio artifacts require exact PCM audit");
                 return;
+            }
+            if (test_case == "analysis-sequence") {
+                for (auto *combo : dock->findChildren<QComboBox *>())
+                    if (combo->findData(QString::fromUtf8(obs_source_get_name(voice))) >= 0)
+                        combo->setCurrentIndex(combo->findData(QString()));
             }
             if (!start_loopback()) return;
             play->click(); run->since = now; run->stage = 5;
             return;
         }
         if (run->stage == 5) {
+            if (test_case == "analysis-sequence" && elapsed(run->since) >= 4.0 && play->text() == product_text("PreviewStop")) {
+                auto *live = dock->findChild<QLabel *>("previewRealtime");
+                auto *mean = dock->findChild<QLabel *>("previewAverage");
+                if (!preview_check(live && mean && !live->text().contains("--") &&
+                    mean->text() == observations.value("analysis_clip_1").toString(),
+                    "selection change altered recorded analysis during replay")) return;
+                observations.insert("analysis_replay_selection_fixed", true);
+            }
             if (play->text() == product_text("PreviewStop")) return;
             if (!preview_check(play->text() == product_text("PreviewReplay") && obs_source_get_monitoring_enabled(voice),
                                "replay did not restore ready state")) return;
@@ -481,6 +632,14 @@ static void preview_test()
             if (elapsed(run->since) < 0.3) return;
             if (!save_loopback("playback-2")) return;
             observations.insert("preview_replay", true);
+            if (test_case == "analysis-sequence") {
+                if (!preview_check(observations.value("analysis_replay_selection_fixed").toBool(), "replay observation missing")) return;
+                for (auto *combo : dock->findChildren<QComboBox *>()) {
+                    const int selected = combo->findData(QString::fromUtf8(obs_source_get_name(voice)));
+                    if (selected >= 0) combo->setCurrentIndex(selected);
+                }
+                obs_source_set_volume(bgm, 0.5f);
+            }
             evidence_clip = 2;
             observed_frames = 0; observed_overflow = false; observed_packets.clear();
             audio_convert_info next_conversion{};
@@ -488,7 +647,7 @@ static void preview_test()
             next_conversion.format = AUDIO_FORMAT_FLOAT_PLANAR;
             next_conversion.speakers = SPEAKERS_STEREO;
             next_conversion.allow_clipping = false;
-            obs_add_raw_audio_callback(0, &next_conversion, observe_mix, nullptr);
+            obs_add_raw_audio_callback(evidence_track, &next_conversion, observe_mix, nullptr);
             observer_attached = true;
             obs_source_set_monitoring_enabled(voice, false);
             origin = os_gettime_ns() - position * 1000000000ULL / evidence_rate;
@@ -514,8 +673,15 @@ static void inspect_meter()
         finish(false, "voice/BGM meter response or visible screenshot missing");
         return;
     }
-    if (phase == "restore") dock_container->hide();
+    if (phase == "restore" && qEnvironmentVariable("LBM_PREVIEW_DEVICE").isEmpty()) dock_container->hide();
     observations.insert("saved_dock_visible", dock_container->isVisible());
+    if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "profile-track") {
+        auto *device = dock->findChild<QComboBox *>("previewDevice");
+        const int index = device ? device->findData(qEnvironmentVariable("LBM_PREVIEW_DEVICE")) : -1;
+        if (!preview_check(index >= 0, "profile scenario device unavailable")) return;
+        device->setCurrentIndex(index);
+        prepare_profile_track_test(preview_test); return;
+    }
     if (!qEnvironmentVariable("LBM_PREVIEW_DEVICE").isEmpty()) { preview_test(); return; }
     finish(true, "settings and visibility checked; voice/BGM meters responded");
 }
@@ -553,6 +719,12 @@ static void start_pcm()
                 voice_right[i] = voice_pcm[i]; bgm_right[i] = bgm_pcm[i];
             }
         }
+        if (numeric_bgm && numeric_start != UINT64_MAX) {
+            for (uint32_t i = 0; i < frames; ++i) {
+                const double seconds = double(position + i - numeric_start) / rate;
+                if (seconds >= 4.0 && seconds < 8.0) voice_pcm[i] = voice_right[i] = 0;
+            }
+        }
         obs_source_audio data{};
         data.frames = frames;
         data.speakers = SPEAKERS_STEREO;
@@ -565,6 +737,11 @@ static void start_pcm()
         data.data[0] = reinterpret_cast<const uint8_t *>(bgm_pcm.data());
         data.data[1] = reinterpret_cast<const uint8_t *>(bgm_right.data());
         obs_source_output_audio(bgm, &data);
+        if (numeric_bgm) {
+            const double seconds = numeric_start == UINT64_MAX ? -1.0 : double(position - numeric_start) / rate;
+            if (seconds < 2.0 || seconds >= 10.0) { bgm_pcm.fill(0); bgm_right.fill(0); }
+            obs_source_output_audio(numeric_bgm, &data);
+        }
         position += frames;
     });
     producer->start(10);
@@ -573,6 +750,10 @@ static void start_pcm()
 
 static void inspect_dock()
 {
+    if (qEnvironmentVariable("LBM_CATEGORY_PROBE") == "1") {
+        start_category_probe(result_dir, finish);
+        return;
+    }
     auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
     if (window) {
         for (auto *candidate : window->findChildren<QWidget *>("loudness-balance-monitor-dock")) {
@@ -601,11 +782,20 @@ static void inspect_dock()
             if (scene_source) obs_source_release(scene_source);
             finish(false, "isolated scene missing"); return;
         }
-        const bool attached = obs_scene_add(scene, voice) && obs_scene_add(scene, bgm);
+        bool attached = obs_scene_add(scene, voice) && obs_scene_add(scene, bgm);
+        if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "analysis-numeric") {
+            numeric_bgm = obs_source_create("lbm_baseline_signal", "LBM numeric bgm 2", nullptr, nullptr);
+            attached = attached && numeric_bgm && obs_scene_add(scene, numeric_bgm);
+            if (numeric_bgm) obs_source_set_audio_mixers(numeric_bgm, 0);
+        }
         obs_source_release(scene_source);
         if (!attached) { finish(false, "test sources could not be attached to scene"); return; }
         if (!QMetaObject::invokeMethod(dock, "on_refresh_sources", Qt::DirectConnection) || !inspect_settings(true)) {
             finish(false, "setup controls unavailable"); return;
+        }
+        if (numeric_bgm) {
+            for (auto *check : dock->findChildren<QCheckBox *>())
+                if (check->property("source_name").toString() == "LBM numeric bgm 2") check->setChecked(true);
         }
     } else {
         // Inspect restored UI before changing controls, refreshing lists or showing the dock.
@@ -620,13 +810,15 @@ static void inspect_dock()
             finish(false, "saved test sources missing or changed"); return;
         }
     }
+    if (inspect_preview_preferences()) return;
     dock_container->show();
     start_pcm();
 }
 
 static void event(obs_frontend_event e, void *)
 {
-    if (qEnvironmentVariable("LBM_PREVIEW_CASE") == "recording-interrupt" && voice && !finished) {
+    if ((qEnvironmentVariable("LBM_PREVIEW_CASE") == "recording-interrupt" ||
+         qEnvironmentVariable("LBM_PREVIEW_CASE") == "waiting-interrupt") && voice && !finished) {
         if (e == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
             auto *play = dock->findChild<QPushButton *>("previewPlay");
             const bool restored = obs_source_get_monitoring_enabled(voice);
@@ -677,6 +869,7 @@ bool obs_module_load()
     info.create = [](obs_data_t *, obs_source_t *) -> void * { return new int(0); };
     info.destroy = [](void *p) { delete static_cast<int *>(p); };
     obs_register_source(&info);
+    if (qEnvironmentVariable("LBM_CATEGORY_PROBE") == "1") register_category_probe();
     obs_frontend_add_event_callback(event, nullptr);
     return true;
 }

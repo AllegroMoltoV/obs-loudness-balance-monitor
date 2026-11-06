@@ -50,8 +50,9 @@ static bool operation(Pulse& p, pa_operation* op, Completion& done, const std::a
     return ok;
 }
 } // namespace
-bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& device, const std::atomic<bool>& cancel, std::string& error)
+bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& device, const std::atomic<bool>& cancel, std::string& error, std::atomic<double>* position)
 {
+    if (position) position->store(-1.0);
     Pulse p;
     p.loop = pa_mainloop_new();
     if (!p.loop) throw std::runtime_error("PulseAudio mainloop allocation failed");
@@ -74,7 +75,7 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
     attr.prebuf = static_cast<uint32_t>(-1);
     attr.minreq = static_cast<uint32_t>(-1);
     attr.fragsize = static_cast<uint32_t>(-1);
-    const auto flags = static_cast<pa_stream_flags_t>(PA_STREAM_START_CORKED | PA_STREAM_DONT_MOVE);
+    const auto flags = static_cast<pa_stream_flags_t>(PA_STREAM_START_CORKED | PA_STREAM_DONT_MOVE | PA_STREAM_AUTO_TIMING_UPDATE | PA_STREAM_INTERPOLATE_TIMING);
     if (pa_stream_connect_playback(p.stream, device.c_str(), &attr, flags, nullptr, nullptr) < 0) throw std::runtime_error("PulseAudio output initialization failed");
     while (pa_stream_get_state(p.stream) != PA_STREAM_READY) {
         if (cancel.load()) return false;
@@ -85,6 +86,8 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
     const size_t total = pcm.size() * sizeof(float);
     size_t sent = 0;
     bool started = false;
+    const double duration = double(pcm.size() / 2) / rate;
+    double last_position = 0.0;
     const auto begin = Clock::now();
     Completion drained;
     pa_operation* drain = nullptr;
@@ -94,6 +97,15 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
         if (!p.pump()) { error = pa_strerror(pa_context_errno(p.context)); break; }
         actual = pa_stream_get_device_name(p.stream);
         if (!actual || device != actual) { error = "Output device changed"; break; }
+        if (position && started) {
+            pa_usec_t usec = 0;
+            if (pa_stream_get_time(p.stream, &usec) == 0) {
+                last_position = std::clamp(double(usec) / 1000000.0, last_position, duration);
+                position->store(last_position);
+            } else if (pa_context_errno(p.context) != PA_ERR_NODATA) {
+                position->store(-1.0);
+            }
+        }
         if (sent < total) {
             const size_t writable = pa_stream_writable_size(p.stream);
             if (writable == static_cast<size_t>(-1)) break;
@@ -134,6 +146,7 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
         error = "Output stream disconnect failed"; result = 2;
     }
     if (result == 2 && error.empty()) error = "PulseAudio playback failed or timed out";
+    if (result == 0 && sent == total && !cancel.load() && position) position->store(duration);
     return result == 0 && sent == total;
 }
 } // namespace lbm

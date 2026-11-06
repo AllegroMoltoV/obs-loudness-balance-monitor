@@ -1,8 +1,11 @@
 #pragma once
 #include "preview-monitor.h"
 #include "preview-recording.h"
+#include "preview-analysis.h"
+#include "preview-category-capture.h"
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 #include <atomic>
 #include <memory>
 #include <thread>
@@ -13,10 +16,16 @@ class PreviewSession : public QObject {
     Q_PROPERTY(qulonglong recordedFrames READ recorded_frames)
     Q_PROPERTY(qulonglong recordedTimestamp READ recorded_timestamp)
     Q_PROPERTY(qulonglong recordedRate READ recorded_rate)
+    Q_PROPERTY(QVariantMap recordedAnalysis READ recorded_analysis)
 public:
     enum class State { idle, preparing, recording, waiting, ready, playing, failed };
     explicit PreviewSession(QObject *parent = nullptr);
     ~PreviewSession() override;
+    void configure_analysis(const std::string &voice, const std::vector<std::string> &bgm,
+                            double threshold, double target, double hysteresis);
+    PreviewAnalysisSummary analysis_summary() const;
+    QVariantMap recorded_analysis() const;
+    const PreviewAnalysisPoint *analysis_point() const;
     void prepare(unsigned track, const std::string &device, bool disable_monitoring);
     void stop_waiting();
     unsigned wait_countdown() const;
@@ -32,12 +41,24 @@ public:
     void tick();
     State state() const { return state_; }
     QString message() const { return message_; }
+    QString analysis_notice() const { return analysis_notice_; }
     double seconds() const;
     unsigned countdown() const;
     static bool output_active();
 signals:
     void changed();
 private:
+    void stop_analysis();
+    QString analysis_notice_;
+    PreviewCategoryCapture category_;
+    PreviewAnalysis analysis_;
+    std::thread analysis_worker_;
+    std::atomic<bool> analysis_done_{true};
+    bool analysis_ok_ = false, analysis_published_ = false;
+    std::string analysis_error_, selected_voice_;
+    std::vector<std::string> selected_bgm_;
+    double vad_threshold_ = -40.0, balance_target_ = 6.0, hysteresis_ = 0.5;
+    std::atomic<double> playback_position_{-1.0};
     static void audio(void *data, size_t mix, struct audio_data *packet);
     void detach();
     void fail(const QString &message);

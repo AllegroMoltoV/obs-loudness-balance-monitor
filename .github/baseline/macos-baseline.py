@@ -12,6 +12,7 @@ import platform
 import plistlib
 import shutil
 import subprocess
+import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -93,7 +94,7 @@ def build(extra):
     run(['zsh', '.github/scripts/package-macos', '--config', 'RelWithDebInfo', '--package'], env=build_env)
     # Enable the diagnostic module only after the normal product artifact is finalized.
     run(['cmake', '--preset', 'macos-ci', '-DENABLE_BASELINE_PROBE=ON', *extra], env=build_env)
-    run(['cmake', '--build', 'build_macos', '--config', 'RelWithDebInfo', '--target', 'lbm-baseline-probe', 'lbm-preview-core', '--parallel'], env=build_env)
+    run(['cmake', '--build', 'build_macos', '--config', 'RelWithDebInfo', '--target', 'lbm-baseline-probe', 'lbm-preview-core', 'lbm-preview-analysis', '--parallel'], env=build_env)
     bundle = expand_distribution(spec)
     binary = bundle / 'Contents/MacOS/loudness-balance-monitor'
     architectures = run(['lipo', '-archs', binary]).decode().split()
@@ -266,9 +267,42 @@ def launch(probe, result_dir):
     print('OBS 33.0.1 normal installation and restoration probes passed', flush=True)
 
 
+def position_test():
+    inventory = run(['system_profiler', 'SPAudioDataType', '-json'], timeout=60)
+    (OUT / 'position-audio-inventory.json').write_bytes(inventory)
+    # Keep diagnostic executables outside the normal build and package trees.
+    executable = OUT / 'preview-position'
+    selector = OUT / 'macos-output-device'
+    run(['xcrun', 'clang++', '-std=c++17', '-O2',
+         '.github/baseline/macos-output-device.cpp', '-framework', 'CoreAudio',
+         '-framework', 'CoreFoundation', '-o', selector])
+    uid = run([selector], timeout=10).decode().strip()
+    if not uid or '\n' in uid:
+        raise RuntimeError('Expected one explicit Apple Virtual Sound Device output UID')
+    (OUT / 'position-device.json').write_text(json.dumps({'uid': uid}, indent=2))
+    run(['xcrun', 'clang++', '-std=c++17', '-O2', '-pthread', '-Isrc',
+         '.github/tests/preview-position.cpp', 'src/preview-output-macos.cpp',
+         '-framework', 'AudioToolbox', '-framework', 'CoreAudio',
+         '-framework', 'CoreFoundation', '-o', executable])
+    results = []
+    for rate in (44100, 48000):
+        for mode in ('normal', 'cancel'):
+            args = [str(executable), uid, str(rate), mode]
+            started = time.monotonic()
+            result = diagnostic(args)
+            result.update(rate=rate, mode=mode, uid=uid, elapsed=time.monotonic() - started)
+            results.append(result)
+            (OUT / 'position-results.json').write_text(json.dumps(results, indent=2))
+            (OUT / f'position-{rate}-{mode}.log').write_text(
+                result['stdout'] + '\nSTDERR:\n' + result['stderr'], encoding='utf-8')
+            if result['exit_code'] != 0 or 'passed=1 ' not in result['stdout']:
+                raise RuntimeError(f'Playback position failed: {rate} {mode}; see position-results.json')
+    print('macOS playback position passed at 44100/48000 Hz, normal/cancel', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['build', 'prepare', 'install', 'run'])
+    parser.add_argument('stage', choices=['build', 'prepare', 'install', 'run', 'position'])
     parser.add_argument('--cmake-arg', action='append', default=[])
     parser.add_argument('--probe', type=Path)
     parser.add_argument('--result-dir', type=Path)
@@ -282,6 +316,8 @@ def main():
         prepare()
     elif args.stage == 'install':
         install()
+    elif args.stage == 'position':
+        position_test()
     else:
         if args.probe is None or args.result_dir is None:
             parser.error('run requires --probe and --result-dir')

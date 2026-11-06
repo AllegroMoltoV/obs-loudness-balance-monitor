@@ -6,7 +6,7 @@
 
 namespace lbm {
 bool play_preview_on_device(const std::vector<float> &, uint32_t, const std::string &, const std::atomic<bool> &,
-                            std::string &);
+                            std::string &, std::atomic<double> * = nullptr);
 
 std::vector<PreviewDevice> preview_devices()
 {
@@ -20,16 +20,17 @@ std::vector<PreviewDevice> preview_devices()
 }
 
 bool play_preview(const std::vector<float> &pcm, uint32_t rate, const std::string &id,
-                  const std::atomic<bool> &cancel, std::string &error)
+                  const std::atomic<bool> &cancel, std::string &error, std::atomic<double> *position)
 {
     error.clear();
+    if (position) position->store(-1.0);
     if (cancel.load()) return false;
     if (pcm.empty() || pcm.size() % 2 || !rate || id.empty() || id == "default" || id.front() == '@') {
         error = "Invalid stereo recording or output device";
         return false;
     }
     try {
-        return play_preview_on_device(pcm, rate, id, cancel, error);
+        return play_preview_on_device(pcm, rate, id, cancel, error, position);
     } catch (const std::exception &exception) {
         error = exception.what();
         return false;

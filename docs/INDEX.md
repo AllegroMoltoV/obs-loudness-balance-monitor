@@ -20,6 +20,10 @@
 
 - [2026-11-06 録音・試聴の製品統合検証](reports/2026-11-06-preview-integration.md)
 
+- [録音試聴のカテゴリー解析の成立性](reports/2026-11-06-preview-category-analysis.md)
+
 ## logs
 
 再確認が必要な実行ログを保存します。
+
+- [試用改善後の録音・試聴検証](reports/2026-11-06-preview-feedback-validation.md)

@@ -21,9 +21,9 @@ static void hrcheck(HRESULT hr,const char *s){if(FAILED(hr)){std::ostringstream 
 // WASAPI ownership, format validation and cleanup follow the existing FinalPlayer.
 struct Resources {
  IMMDeviceEnumerator *enumerator=nullptr; IMMDevice *device=nullptr;
- IAudioClient *client=nullptr;IAudioRenderClient *render=nullptr;WAVEFORMATEX *format=nullptr;
+ IAudioClient *client=nullptr;IAudioRenderClient *render=nullptr;IAudioClock *clock=nullptr;WAVEFORMATEX *format=nullptr;
  bool playing=false;
- ~Resources(){if(playing)client->Stop();if(client)client->Reset();if(render)render->Release();if(client)client->Release();if(device)device->Release();if(enumerator)enumerator->Release();if(format)CoTaskMemFree(format);}
+ ~Resources(){if(playing)client->Stop();if(client)client->Reset();if(clock)clock->Release();if(render)render->Release();if(client)client->Release();if(device)device->Release();if(enumerator)enumerator->Release();if(format)CoTaskMemFree(format);}
 };
 static std::vector<float> convert(uint32_t from_rate,uint32_t to_rate,const std::vector<float>* captured_left=nullptr,const std::vector<float>* captured_right=nullptr){
  std::vector<float> pcm;
@@ -50,7 +50,8 @@ struct Com {
  ~Com(){CoUninitialize();}
 };
 } // namespace
-bool play_preview_on_device(const std::vector<float>& input,uint32_t input_rate,const std::string& id,const std::atomic<bool>& cancel,std::string&){
+bool play_preview_on_device(const std::vector<float>& input,uint32_t input_rate,const std::string& id,const std::atomic<bool>& cancel,std::string&,std::atomic<double>* position){
+ if(position)position->store(-1.0);
  Com com;
  Resources r;hrcheck(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,__uuidof(IMMDeviceEnumerator),reinterpret_cast<void**>(&r.enumerator)),"CoCreateInstance");
  std::wstring wide(id.begin(),id.end());hrcheck(r.enumerator->GetDevice(wide.c_str(),&r.device),"GetDevice");
@@ -70,12 +71,24 @@ bool play_preview_on_device(const std::vector<float>& input,uint32_t input_rate,
  hrcheck(r.client->Initialize(AUDCLNT_SHAREMODE_SHARED,0,1000000,0,r.format,nullptr),"Initialize");
  UINT32 capacity=0;hrcheck(r.client->GetBufferSize(&capacity),"GetBufferSize");
  hrcheck(r.client->GetService(__uuidof(IAudioRenderClient),reinterpret_cast<void**>(&r.render)),"GetService");
+ UINT64 frequency=0;
+ if(position && SUCCEEDED(r.client->GetService(__uuidof(IAudioClock),reinterpret_cast<void**>(&r.clock)))) {
+  if(FAILED(r.clock->GetFrequency(&frequency)))frequency=0;
+ }
+ const double duration=double(input.size()/2)/input_rate;
+ double last_position=0.0;
  size_t cursor=0;uint64_t drain_deadline=0;UINT32 final_padding=0;
  const uint64_t deadline=os_gettime_ns()+uint64_t(pcm.size()/2)*1000000000ULL/f.nSamplesPerSec+10000000000ULL;
  while(true){
   UINT32 padding=0;hrcheck(r.client->GetCurrentPadding(&padding),"GetCurrentPadding");require(padding<=capacity,"invalid padding");
   const uint64_t now=os_gettime_ns();
   if(cancel.load())break;
+  if(position && r.playing && r.clock && frequency){
+   UINT64 ticks=0;
+   const HRESULT status=r.clock->GetPosition(&ticks,nullptr);
+   if(status==S_OK){last_position=std::clamp(double(ticks)/double(frequency),last_position,duration);position->store(last_position);}
+   else if(FAILED(status))position->store(-1.0);
+  }
   require(now<deadline,"playback timeout");
   if(cursor==pcm.size()/2){
    if(!drain_deadline)drain_deadline=now+2000000000ULL;
@@ -89,7 +102,9 @@ bool play_preview_on_device(const std::vector<float>& input,uint32_t input_rate,
   if(!r.playing){hrcheck(r.client->Start(),"Start");r.playing=true;}
  }
  hrcheck(r.client->Stop(),"Stop");r.playing=false;hrcheck(r.client->GetCurrentPadding(&final_padding),"stop padding");hrcheck(r.client->Reset(),"Reset");UINT32 reset_padding=1;hrcheck(r.client->GetCurrentPadding(&reset_padding),"reset padding");require(reset_padding==0,"reset retained frames");
- return !cancel.load();
+ const bool completed=!cancel.load();
+ if(completed && position)position->store(duration);
+ return completed;
 }
 } // namespace lbm
 #endif

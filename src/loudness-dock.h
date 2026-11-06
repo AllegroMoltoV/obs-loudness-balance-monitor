@@ -99,6 +99,8 @@ private:
     QComboBox *preview_device_{nullptr};
     QCheckBox *preview_monitor_{nullptr};
     QLabel *preview_status_{nullptr};
+    QLabel *preview_realtime_{nullptr};
+    QLabel *preview_average_{nullptr};
     QPushButton *preview_record_{nullptr};
     QPushButton *preview_play_{nullptr};
     QPushButton *preview_refresh_{nullptr};

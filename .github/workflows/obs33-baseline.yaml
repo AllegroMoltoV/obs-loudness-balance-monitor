@@ -66,6 +66,8 @@ jobs:
         with:
           submodules: recursive
       - run: python3 .github/baseline/macos-baseline.py build
+      - name: Verify macOS playback position
+        run: python3 .github/baseline/macos-baseline.py position
       - run: ctest --test-dir build_macos -C RelWithDebInfo --output-on-failure
       - run: python3 .github/baseline/macos-baseline.py prepare
       - run: python3 .github/baseline/macos-baseline.py install
