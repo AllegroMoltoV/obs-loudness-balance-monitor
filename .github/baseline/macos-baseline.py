@@ -54,16 +54,19 @@ def expand_distribution(spec):
     artifact = ROOT / 'release' / f"{spec['name']}-{spec['version']}-macos-universal.pkg"
     if not artifact.is_file():
         raise RuntimeError(f'Normal package script did not generate: {artifact}')
-    # Confirm this runner's supported flags before using its system pkgutil.
-    help_text = run(['/usr/sbin/pkgutil', '--help']).decode()
-    if '--expand-full' not in help_text:
-        raise RuntimeError('This pkgutil does not support --expand-full')
+    run(['/usr/sbin/pkgutil', '--help'])
     expanded = OUT / 'expanded-package'
-    run(['/usr/sbin/pkgutil', '--expand-full', artifact, expanded])
-    bundles = [p for p in expanded.rglob(spec['name'] + '.plugin') if p.is_dir()]
-    if len(bundles) != 1:
-        raise RuntimeError(f'Expected one product bundle in distribution pkg: {bundles}')
-    bundle = bundles[0]
+    run(['/usr/sbin/pkgutil', '--expand', artifact, expanded])
+    payload = run(['/usr/sbin/pkgutil', '--payload-files', artifact]).decode()
+    (OUT / 'package-payload.txt').write_text(payload, encoding='utf-8')
+    bundle = ROOT / 'release/RelWithDebInfo' / (spec['name'] + '.plugin')
+    if not bundle.is_dir():
+        raise RuntimeError('Packaged build bundle is missing')
+    payload_paths = [line.strip().rstrip('/') for line in payload.splitlines()]
+    for relative in bundle_manifest(bundle):
+        suffix = spec['name'] + '.plugin/' + relative
+        if not any(path.endswith(suffix) for path in payload_paths):
+            raise RuntimeError(f'Expected bundle file missing from package payload: {relative}')
     evidence = {'package': str(artifact.relative_to(ROOT)),
         'package_sha256': hashlib.sha256(artifact.read_bytes()).hexdigest(),
         'bundle': str(bundle.relative_to(ROOT)), 'files': bundle_manifest(bundle),
@@ -135,7 +138,7 @@ def install():
     run([installer, '-pkg', package, '-target', 'CurrentUserHomeDirectory', '-verboseR', '-dumplog'])
     installed = config / 'plugins/loudness-balance-monitor.plugin'
     if not installed.is_dir() or bundle_manifest(installed) != evidence['files']:
-        raise RuntimeError('Installed product does not match the distribution payload')
+        raise RuntimeError('Installed product does not match the packaged build bundle')
     if (config / 'global.ini').exists() or (config / 'user.ini').exists():
         raise RuntimeError('Unexpected OBS settings appeared before first launch')
     diagnostics['installed_bundle'] = str(installed)

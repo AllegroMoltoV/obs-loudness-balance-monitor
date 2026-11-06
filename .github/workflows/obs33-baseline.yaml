@@ -6,7 +6,30 @@ on:
 permissions:
   contents: read
 jobs:
+  scope:
+    runs-on: ubuntu-26.04
+    outputs:
+      macos_only: ${{ steps.scope.outputs.macos_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          macos_only=false
+          if [[ -n "$BEFORE_SHA" ]] && git cat-file -e "$BEFORE_SHA^{commit}"; then
+            git diff --name-only "$BEFORE_SHA" HEAD > "$RUNNER_TEMP/baseline-changes.txt"
+            if [[ -s "$RUNNER_TEMP/baseline-changes.txt" ]] && ! grep -v -E '^\.github/(baseline/macos-baseline\.py|workflows/obs33-baseline\.yaml)$' "$RUNNER_TEMP/baseline-changes.txt"; then
+              macos_only=true
+            fi
+          fi
+          echo "macos_only=$macos_only" >> "$GITHUB_OUTPUT"
   windows:
+    needs: scope
+    if: needs.scope.outputs.macos_only != 'true'
     runs-on: windows-2025-vs2026
     timeout-minutes: 45
     steps:
@@ -31,6 +54,7 @@ jobs:
             release/
             .deps/obs-load-windows/results/
   macos:
+    needs: scope
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -51,10 +75,13 @@ jobs:
             obs33-results/macos/*.log
             obs33-results/macos/*.json
             obs33-results/macos/*.plist
+            obs33-results/macos/*.txt
             obs33-results/macos/probe/
             obs33-results/macos/obs-config/
             release/
   ubuntu:
+    needs: scope
+    if: needs.scope.outputs.macos_only != 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
