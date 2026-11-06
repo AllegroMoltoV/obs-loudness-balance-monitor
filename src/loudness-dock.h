@@ -2,6 +2,7 @@
 
 #include "audio-capture.h"
 #include "loudness-analyzer.h"
+#include "preview-session.h"
 
 #include <obs-module.h>
 
@@ -30,6 +31,7 @@ public:
 	~LoudnessDock() override;
 	void on_scene_collection_cleanup();
 	void on_scene_collection_changed();
+	void interrupt_preview();
 
 private slots:
 	void on_update_timer();
@@ -42,6 +44,8 @@ private slots:
 
 private:
 	void setup_ui();
+	void update_preview();
+	void refresh_preview_devices();
 	void refresh_source_lists();
 	void update_meters();
 	void update_status_colors();
@@ -87,6 +91,16 @@ private:
 	QLabel *vad_threshold_value_{nullptr};
 	QDoubleSpinBox *balance_target_spin_{nullptr};
 	QComboBox *mix_preset_combo_{nullptr};
+
+    QComboBox *preview_track_{nullptr};
+    QComboBox *preview_device_{nullptr};
+    QCheckBox *preview_monitor_{nullptr};
+    QLabel *preview_status_{nullptr};
+    QPushButton *preview_record_{nullptr};
+    QPushButton *preview_play_{nullptr};
+    QPushButton *preview_cancel_{nullptr};
+    QPushButton *preview_refresh_{nullptr};
+    std::unique_ptr<PreviewSession> preview_;
 
 	// Core components
 	std::unique_ptr<LoudnessAnalyzer> analyzer_;

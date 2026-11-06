@@ -20,6 +20,15 @@ static void on_frontend_event(enum obs_frontend_event event, void *private_data)
 {
 	UNUSED_PARAMETER(private_data);
 
+    if (g_dock && (event == OBS_FRONTEND_EVENT_STREAMING_STARTING ||
+                   event == OBS_FRONTEND_EVENT_RECORDING_STARTING ||
+                   event == OBS_FRONTEND_EVENT_REPLAY_BUFFER_STARTING ||
+                   event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING ||
+                   event == OBS_FRONTEND_EVENT_PROFILE_CHANGING ||
+                   event == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN ||
+                   event == OBS_FRONTEND_EVENT_EXIT)) {
+        g_dock->interrupt_preview();
+    }
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		// Create dock after OBS UI is ready
 		auto *main_window = static_cast<QMainWindow *>(obs_frontend_get_main_window());

@@ -1,5 +1,6 @@
 #include "loudness-dock.h"
 #include "plugin-support.h"
+#include "preview-output.h"
 
 #include <obs-frontend-api.h>
 #include <util/platform.h>
@@ -26,8 +27,11 @@ LoudnessDock::LoudnessDock(QWidget *parent) : QWidget(parent)
 		analyzer_->set_sample_rate(sample_rate);
 	}
 
+	preview_ = std::make_unique<PreviewSession>();
 	setup_ui();
 	load_settings();
+	connect(preview_.get(), &PreviewSession::changed, this, &LoudnessDock::update_preview);
+	update_preview();
 
 	// Start analyzer
 	analyzer_->start();
@@ -40,6 +44,8 @@ LoudnessDock::LoudnessDock(QWidget *parent) : QWidget(parent)
 
 LoudnessDock::~LoudnessDock()
 {
+	disconnect(preview_.get(), nullptr, this, nullptr);
+	preview_->cancel();
 	save_settings();
 
 	if (update_timer_) {
@@ -53,11 +59,13 @@ LoudnessDock::~LoudnessDock()
 
 void LoudnessDock::on_scene_collection_cleanup()
 {
+	interrupt_preview();
 	capture_manager_->detach_sources();
 }
 
 void LoudnessDock::on_scene_collection_changed()
 {
+	PreviewMonitors::recover();
 	capture_manager_->reattach_sources();
 	refresh_source_lists();
 }
@@ -76,6 +84,60 @@ void LoudnessDock::setup_ui()
 	auto *main_layout = new QVBoxLayout(content_widget);
 	main_layout->setSpacing(8);
 	main_layout->setContentsMargins(8, 8, 8, 8);
+
+
+    auto *preview_group = new QGroupBox(obs_module_text("PreviewTitle"));
+    auto *preview_layout = new QVBoxLayout(preview_group);
+    auto *preview_help = new QLabel(obs_module_text("PreviewHelp"));
+    preview_help->setWordWrap(true);
+    preview_layout->addWidget(preview_help);
+    auto *track_row = new QHBoxLayout();
+    track_row->addWidget(new QLabel(obs_module_text("PreviewTrack")));
+    preview_track_ = new QComboBox();
+    preview_track_->setObjectName("previewTrack");
+    for (int i = 0; i < 6; ++i) preview_track_->addItem(QString::number(i + 1), i);
+    track_row->addWidget(preview_track_, 1);
+    preview_layout->addLayout(track_row);
+    preview_layout->addWidget(new QLabel(obs_module_text("PreviewDevice")));
+    preview_device_ = new QComboBox();
+    preview_device_->setObjectName("previewDevice");
+    preview_device_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    preview_layout->addWidget(preview_device_);
+    preview_refresh_ = new QPushButton(obs_module_text("PreviewRefresh"));
+    connect(preview_refresh_, &QPushButton::clicked, this, &LoudnessDock::refresh_preview_devices);
+    preview_layout->addWidget(preview_refresh_);
+    preview_monitor_ = new QCheckBox(obs_module_text("PreviewMonitorOff"));
+    preview_monitor_->setObjectName("previewMonitorOff");
+    preview_monitor_->setChecked(true);
+    connect(preview_monitor_, &QCheckBox::toggled, this, &LoudnessDock::update_preview);
+    preview_layout->addWidget(preview_monitor_);
+    preview_status_ = new QLabel();
+    preview_status_->setObjectName("previewStatus");
+    preview_status_->setWordWrap(true);
+    preview_status_->setTextFormat(Qt::PlainText);
+    preview_layout->addWidget(preview_status_);
+    auto *buttons = new QHBoxLayout();
+    preview_record_ = new QPushButton();
+    preview_record_->setObjectName("previewRecord");
+    preview_play_ = new QPushButton(obs_module_text("PreviewPlay"));
+    preview_play_->setObjectName("previewPlay");
+    preview_cancel_ = new QPushButton(obs_module_text("PreviewCancel"));
+    preview_cancel_->setObjectName("previewCancel");
+    buttons->addWidget(preview_record_);
+    buttons->addWidget(preview_play_);
+    buttons->addWidget(preview_cancel_);
+    preview_layout->addLayout(buttons);
+    connect(preview_record_, &QPushButton::clicked, this, [this] {
+        if (preview_->state() == PreviewSession::State::recording) preview_->finish();
+        else preview_->prepare(unsigned(preview_track_->currentData().toUInt()));
+    });
+    connect(preview_play_, &QPushButton::clicked, this, [this] {
+        if (preview_->state() == PreviewSession::State::playing) preview_->stop_playback();
+        else preview_->play(preview_device_->currentData().toString().toStdString(), preview_monitor_->isChecked());
+    });
+    connect(preview_cancel_, &QPushButton::clicked, this, [this] { preview_->cancel(); });
+    refresh_preview_devices();
+    main_layout->addWidget(preview_group);
 
 	// === Source Selection Group ===
 	auto *source_group = new QGroupBox(obs_module_text("SourceSelection"));
@@ -317,6 +379,65 @@ void LoudnessDock::setup_ui()
 	refresh_source_lists();
 }
 
+
+void LoudnessDock::interrupt_preview()
+{
+    preview_->cancel();
+}
+
+void LoudnessDock::refresh_preview_devices()
+{
+    const QString selected = preview_device_->currentData().toString();
+    preview_device_->clear();
+    preview_device_->addItem(obs_module_text("PreviewSelectDevice"), "");
+    for (const auto &device : preview_devices())
+        preview_device_->addItem(QString::fromStdString(device.name), QString::fromStdString(device.id));
+    int index = preview_device_->findData(selected);
+    if (index < 0 && !selected.isEmpty()) {
+        preview_device_->addItem(QString::fromUtf8(obs_module_text("PreviewUnavailable")).arg(selected), selected);
+        index = preview_device_->count() - 1;
+    }
+    preview_device_->setCurrentIndex(std::max(index, 0));
+}
+
+void LoudnessDock::update_preview()
+{
+    using State = PreviewSession::State;
+    const auto state = preview_->state();
+    const bool busy = state == State::preparing || state == State::recording || state == State::playing;
+    const bool blocked = PreviewSession::output_active();
+    preview_track_->setEnabled(!busy);
+    preview_device_->setEnabled(!busy);
+    preview_refresh_->setEnabled(!busy);
+    preview_monitor_->setEnabled(!busy);
+    preview_record_->setEnabled(!blocked && state != State::preparing && state != State::playing);
+    preview_play_->setEnabled(!blocked && (state == State::ready || state == State::playing));
+    preview_cancel_->setEnabled(state != State::idle);
+    preview_record_->setText(obs_module_text(state == State::recording ? "PreviewFinish" :
+                                            state == State::ready ? "PreviewRerecord" : "PreviewRecord"));
+    preview_play_->setText(obs_module_text(state == State::playing ? "PreviewStop" : "PreviewPlay"));
+    QString message;
+    if (blocked) message = obs_module_text("PreviewOutputActive");
+    else if (!preview_->message().isEmpty()) message = preview_->message();
+    else switch (state) {
+    case State::preparing:
+        message = QString::fromUtf8(obs_module_text("PreviewCountdown")).arg(preview_->countdown());
+        break;
+    case State::recording:
+        message = QString::fromUtf8(obs_module_text("PreviewRecording")).arg(preview_->seconds(), 0, 'f', 1);
+        break;
+    case State::ready:
+        message = QString::fromUtf8(obs_module_text("PreviewReady")).arg(preview_->seconds(), 0, 'f', 1);
+        message += "
+";
+        message += obs_module_text(preview_monitor_->isChecked() ? "PreviewMonitorNotice" : "PreviewOverlapNotice");
+        break;
+    case State::playing: message = obs_module_text("PreviewPlaying"); break;
+    default: message = obs_module_text("PreviewIdle"); break;
+    }
+    preview_status_->setText(message);
+}
+
 void LoudnessDock::refresh_source_lists()
 {
 	// Restore the saved selection after a scene collection without this source.
@@ -367,6 +488,8 @@ void LoudnessDock::refresh_source_lists()
 
 void LoudnessDock::on_update_timer()
 {
+	preview_->tick();
+	update_preview();
 	update_meters();
 	update_status_colors();
 }
@@ -564,6 +687,10 @@ void LoudnessDock::save_settings()
 	// Save source selections
 	capture_manager_->save_settings(settings);
 
+    obs_data_set_int(settings, "preview_track", preview_track_->currentData().toInt());
+    obs_data_set_string(settings, "preview_device", preview_device_->currentData().toString().toUtf8().constData());
+    obs_data_set_bool(settings, "preview_monitor_off", preview_monitor_->isChecked());
+
 	// Save other settings
 	obs_data_set_int(settings, "vad_threshold", vad_threshold_slider_->value());
 	obs_data_set_double(settings, "balance_target", balance_target_spin_->value());
@@ -592,6 +719,20 @@ void LoudnessDock::load_settings()
 
 	// Refresh UI to show loaded sources
 	refresh_source_lists();
+
+    const int track = int(obs_data_get_int(settings, "preview_track"));
+    preview_track_->setCurrentIndex(track >= 0 && track < 6 ? track : 0);
+    const QString device = QString::fromUtf8(obs_data_get_string(settings, "preview_device"));
+    if (!device.isEmpty()) {
+        int index = preview_device_->findData(device);
+        if (index < 0) {
+            preview_device_->addItem(QString::fromUtf8(obs_module_text("PreviewUnavailable")).arg(device), device);
+            index = preview_device_->count() - 1;
+        }
+        preview_device_->setCurrentIndex(index);
+    }
+    obs_data_set_default_bool(settings, "preview_monitor_off", true);
+    preview_monitor_->setChecked(obs_data_get_bool(settings, "preview_monitor_off"));
 
 	// Load other settings
 	int vad_thresh = static_cast<int>(obs_data_get_int(settings, "vad_threshold"));
