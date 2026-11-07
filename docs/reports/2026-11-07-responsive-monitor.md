@@ -37,4 +37,9 @@ Windowsの隔離OBS 33.0.1とQt 6.11.1を使用した。依頼者が通常OBSの
 
 実装worktreeの`.deps/preview-responsive-ja4-48000-analysis-sequence/result`に代表E2E、位置情報、日本語の配置とヘルプ画像を保存した。英語の最終表示検証は`.deps/preview-responsive-en5-48000-basic/result`に保存し、成功した。最後の製品変更はガイドボタンの高さ計算だけであり、録音・試聴のE2Eを重複実行していない。ビルドと検証ログは同worktreeの`.logs/2026110796-*`以降に保存した。
 
-3OS CI、退避付き候補導入、依頼者の再試用を残している。ユーザーテストが完了するまで公開しない。
+候補`ab0099af63d9b9dae45b5f4604628be1856f0ff7`の[CI 42348939864](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/actions/runs/42348939864)はWindows、macOS、Ubuntuですべて成功した。Windowsの配布ZIPとDLLをCIの実OBSロード証拠へ照合した。
+
+- ZIP SHA256: `87169DBE7CC789C44621FA8300078249F6CA24C576BF0291908223CE89AA6961`
+- DLL SHA256: `A79602DE07EEF8F8C442FDDBC3D0FAEBF81364CB14E9CAEF1785737747F27309`
+
+CIで確認したZIPを通常環境へ導入した。導入前のプラグインと設定をrootの`.appendix/20261107-responsive-monitor-trial`へ退避した。設定のハッシュは導入前後で一致した。依頼者が通常OBSを起動し、16:20:13のログでOBS 33.0.1、プラグインの読み込み、ドック登録、表示状態復元を確認した。導入DLLのハッシュも一致した。依頼者AllegroMoltoVが使用感テストの合格を明示した。公開前の最終配布物検証へ進む。

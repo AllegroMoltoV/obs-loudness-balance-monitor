@@ -41,13 +41,15 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs ebur128)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ole32)
 elseif(APPLE)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")
+  target_link_libraries(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation"
+  )
 else()
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE PkgConfig::PULSE)
 endif()
-
 
 # Add libebur128 include directory
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${libebur128_SOURCE_DIR}/ebur128)

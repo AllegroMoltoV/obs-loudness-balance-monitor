@@ -48,8 +48,8 @@ class PreviewAnalysis {
 public:
 	static constexpr uint32_t kMaximumSeconds = 30;
 
-	bool reset(uint32_t sample_rate, double vad_threshold, double target, double hysteresis,
-		   double mix_ok = -18.0, double mix_warn = -22.0);
+	bool reset(uint32_t sample_rate, double vad_threshold, double target, double hysteresis, double mix_ok = -18.0,
+		   double mix_warn = -22.0);
 	// Inputs are time-aligned interleaved stereo, including silence. Returns false
 	// on invalid input, excess duration, or library failure; discard its analysis.
 	bool append(const float *voice_stereo, const float *bgm_stereo, uint32_t frames);

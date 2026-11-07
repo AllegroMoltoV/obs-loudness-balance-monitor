@@ -71,22 +71,22 @@ private:
 	std::vector<QCheckBox *> bgm_checkboxes_;
 	QPushButton *refresh_button_{nullptr};
 
-    struct MonitorWidgets {
-        std::array<QLabel *, 3> ratings{};
-        std::array<QProgressBar *, 3> meters{};
-        std::array<QLabel *, 3> lufs{};
-        std::array<QLabel *, 3> peaks{};
-        QLabel *vad{nullptr};
-        QLabel *delta{nullptr};
-        QBoxLayout *metrics{nullptr};
-    };
-    MonitorWidgets add_monitor_widgets(QVBoxLayout *layout, const QString &prefix, bool whole_recording);
-    void show_monitor_values(const MonitorWidgets &widgets, const std::array<double, 3> &lufs,
-                             const std::array<double, 3> &peaks, double delta, bool voice_active);
-    void show_monitor_rating(QLabel *label, std::optional<Status> status);
-    MonitorWidgets live_monitor_;
-    MonitorWidgets preview_instant_monitor_;
-    MonitorWidgets preview_whole_monitor_;
+	struct MonitorWidgets {
+		std::array<QLabel *, 3> ratings{};
+		std::array<QProgressBar *, 3> meters{};
+		std::array<QLabel *, 3> lufs{};
+		std::array<QLabel *, 3> peaks{};
+		QLabel *vad{nullptr};
+		QLabel *delta{nullptr};
+		QBoxLayout *metrics{nullptr};
+	};
+	MonitorWidgets add_monitor_widgets(QVBoxLayout *layout, const QString &prefix, bool whole_recording);
+	void show_monitor_values(const MonitorWidgets &widgets, const std::array<double, 3> &lufs,
+				 const std::array<double, 3> &peaks, double delta, bool voice_active);
+	void show_monitor_rating(QLabel *label, std::optional<Status> status);
+	MonitorWidgets live_monitor_;
+	MonitorWidgets preview_instant_monitor_;
+	MonitorWidgets preview_whole_monitor_;
 
 	// UI Components - Settings
 	QSlider *vad_threshold_slider_{nullptr};
@@ -94,21 +94,21 @@ private:
 	QDoubleSpinBox *balance_target_spin_{nullptr};
 	QComboBox *mix_preset_combo_{nullptr};
 
-    QComboBox *preview_track_{nullptr};
-    QCheckBox *preview_manual_track_{nullptr};
-    QLabel *preview_track_info_{nullptr};
-    QLabel *preview_recorded_track_{nullptr};
-    QComboBox *preview_device_{nullptr};
-    QCheckBox *preview_monitor_{nullptr};
-    QLabel *preview_status_{nullptr};
-    QWidget *preview_analysis_group_{nullptr};
-    QLabel *preview_realtime_{nullptr};
-    QLabel *preview_average_{nullptr};
-    QPushButton *preview_record_{nullptr};
-    QPushButton *preview_play_{nullptr};
-    QPushButton *preview_refresh_{nullptr};
-    bool preview_has_played_{false};
-    std::unique_ptr<PreviewSession> preview_;
+	QComboBox *preview_track_{nullptr};
+	QCheckBox *preview_manual_track_{nullptr};
+	QLabel *preview_track_info_{nullptr};
+	QLabel *preview_recorded_track_{nullptr};
+	QComboBox *preview_device_{nullptr};
+	QCheckBox *preview_monitor_{nullptr};
+	QLabel *preview_status_{nullptr};
+	QWidget *preview_analysis_group_{nullptr};
+	QLabel *preview_realtime_{nullptr};
+	QLabel *preview_average_{nullptr};
+	QPushButton *preview_record_{nullptr};
+	QPushButton *preview_play_{nullptr};
+	QPushButton *preview_refresh_{nullptr};
+	bool preview_has_played_{false};
+	std::unique_ptr<PreviewSession> preview_;
 
 	// Core components
 	std::unique_ptr<LoudnessAnalyzer> analyzer_;

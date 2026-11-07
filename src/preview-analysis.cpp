@@ -14,8 +14,9 @@ double peak_dbfs(double peak)
 Status clip_status(double voice, double bgm, double mix)
 {
 	const double peak = std::max({voice, bgm, mix});
-	return peak >= AnalysisConfig::kClipBadThreshold ? Status::BAD
-	       : peak >= AnalysisConfig::kClipWarnThreshold ? Status::WARN : Status::OK;
+	return peak >= AnalysisConfig::kClipBadThreshold    ? Status::BAD
+	       : peak >= AnalysisConfig::kClipWarnThreshold ? Status::WARN
+							    : Status::OK;
 }
 
 } // namespace
@@ -26,8 +27,8 @@ void PreviewAnalysis::StateDeleter::operator()(ebur128_state *state) const
 		ebur128_destroy(&state);
 }
 
-bool PreviewAnalysis::reset(uint32_t sample_rate, double vad_threshold, double target, double hysteresis,
-			    double mix_ok, double mix_warn)
+bool PreviewAnalysis::reset(uint32_t sample_rate, double vad_threshold, double target, double hysteresis, double mix_ok,
+			    double mix_warn)
 {
 	voice_state_.reset();
 	bgm_state_.reset();
@@ -47,8 +48,8 @@ bool PreviewAnalysis::reset(uint32_t sample_rate, double vad_threshold, double t
 	failed_ = true;
 	sample_rate_ = 0;
 	if (sample_rate < 100 || !std::isfinite(vad_threshold) || !std::isfinite(target) ||
-	    !std::isfinite(hysteresis) || hysteresis < 0.0 || !std::isfinite(mix_ok) ||
-	    !std::isfinite(mix_warn) || mix_ok < mix_warn)
+	    !std::isfinite(hysteresis) || hysteresis < 0.0 || !std::isfinite(mix_ok) || !std::isfinite(mix_warn) ||
+	    mix_ok < mix_warn)
 		return false;
 
 	sample_rate_ = sample_rate;
@@ -204,13 +205,14 @@ void PreviewAnalysis::observe()
 	if (point.voice_active && processed_frames_ >= static_cast<uint64_t>(sample_rate_) * 3) {
 		double voice = -HUGE_VAL, bgm = -HUGE_VAL;
 		if (ebur128_loudness_shortterm(voice_state_.get(), &voice) == EBUR128_SUCCESS &&
-		    ebur128_loudness_shortterm(bgm_state_.get(), &bgm) == EBUR128_SUCCESS &&
-		    std::isfinite(voice) && std::isfinite(bgm)) {
+		    ebur128_loudness_shortterm(bgm_state_.get(), &bgm) == EBUR128_SUCCESS && std::isfinite(voice) &&
+		    std::isfinite(bgm)) {
 			voice_sum_ += voice;
 			bgm_sum_ += bgm;
 			++valid_points_;
 			double mix = -HUGE_VAL;
-			if (ebur128_loudness_shortterm(mix_state_.get(), &mix) == EBUR128_SUCCESS && std::isfinite(mix)) {
+			if (ebur128_loudness_shortterm(mix_state_.get(), &mix) == EBUR128_SUCCESS &&
+			    std::isfinite(mix)) {
 				mix_sum_ += mix;
 				++mix_valid_points_;
 			}
@@ -248,7 +250,9 @@ const PreviewAnalysisPoint *PreviewAnalysis::point_at(uint64_t frame_position) c
 	if (failed_)
 		return nullptr;
 	const auto it = std::upper_bound(series_.begin(), series_.end(), frame_position,
-		[](uint64_t position, const PreviewAnalysisPoint &point) { return position < point.frame_position; });
+					 [](uint64_t position, const PreviewAnalysisPoint &point) {
+						 return position < point.frame_position;
+					 });
 	return it == series_.begin() ? nullptr : &*(it - 1);
 }
 
