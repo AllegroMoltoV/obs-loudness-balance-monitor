@@ -19,6 +19,7 @@
 #include <QTimer>
 #include <QPushButton>
 #include <QLabel>
+#include <QStringList>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -211,6 +212,17 @@ static bool preview_check(bool condition, const char *reason)
     return condition;
 }
 
+// Read the values actually drawn by the shared monitor widgets.
+static QString analysis_display(const QString &prefix)
+{
+    QStringList values;
+    for (const char *suffix : {"VoiceLufs", "BgmLufs", "MixLufs", "VoicePeak", "BgmPeak", "MixPeak", "Delta"}) {
+        auto *label = dock->findChild<QLabel *>(prefix + suffix);
+        values.append(label ? label->text() : "-- [missing]");
+    }
+    if (auto *notice = dock->findChild<QLabel *>(prefix)) values.append(notice->text());
+    return values.join(QChar(10));
+}
 #include "preview-preferences-probe.h"
 #include "preview-profile-probe.h"
 #include "preview-layout-probe.h"
@@ -443,7 +455,7 @@ static void preview_test()
                     if (!preview_check(item != nullptr, "BGM scene item missing")) return;
                     observations.insert("analysis_source_disabled", true);
                 }
-                if (!automatic && elapsed(run->since) >= (test_case == "analysis-numeric" ? 12.0 : recovery && evidence_clip == 2 ? 2.0 : test_case == "analysis" || sequence ? 6.0 : 2.0)) record->click();
+                if (!automatic && elapsed(run->since) >= (test_case == "analysis-numeric" ? 12.0 : sequence && evidence_clip == 2 ? 2.0 : test_case == "analysis" || sequence ? 6.0 : 2.0)) record->click();
             }
             if (play->text() != product_text("PreviewStopWaiting") || !play->isVisible()) return;
             if (!preview_check(run->seen_recording && !record->isEnabled(), "waiting reached without recording")) return;
@@ -455,6 +467,19 @@ static void preview_test()
                 }
             }
             if (test_case == "analysis-numeric" && !numeric_save()) return;
+            if (sequence) {
+                auto *session = dock->findChild<QObject *>("previewSession");
+                const auto data = QJsonObject::fromVariantMap(session->property("recordedAnalysis").toMap());
+                observations.insert(QString("sequence_clip_%1").arg(evidence_clip), data);
+                if (evidence_clip == 2) {
+                    if (!preview_check(data.value("frames").toDouble() > 0 && data.value("valid_points").toInt() == 0 &&
+                        data.value("clip_status").toInt(-1) >= 0 && !data.value("bgm_peak").isNull(),
+                        "short recording lost peak evidence with unavailable mean")) return;
+                    if (!recovery && !preview_check(data.value("bgm_peak").toDouble() <
+                        observations.value("sequence_clip_1").toObject().value("bgm_peak").toDouble(),
+                        "rerecord retained previous maximum peak")) return;
+                }
+            }
             if (evidence_clip == 1) first_clip_pcm = expected_pcm;
             else if (!preview_check(expected_pcm != first_clip_pcm, "rerecord retained the previous audio")) return;
             if (automatic && !preview_check(expected_pcm.size() / 2 == size_t(evidence_rate) * 30,
@@ -525,14 +550,21 @@ static void preview_test()
             return;
         }
         if (run->stage == 3) {
+            if (test_case == "analysis-numeric" && elapsed(run->since) >= 1.0 &&
+                !observations.value("expanded_layout_observed").toBool()) {
+                if (!preview_check(!analysis_display("previewRealtime").contains("--") &&
+                    !analysis_display("previewAverage").contains("--"), "expanded monitor values missing")) return;
+                if (!preview_check(capture_preview_layout("preview-analysis"), "expanded monitor capture failed")) return;
+                observations.insert("expanded_layout_observed", true);
+            }
             if (play->text() == product_text("PreviewStop") &&
                 !observations.contains(QString("first_dynamic_clip_%1").arg(evidence_clip))) {
                 auto *live = dock->findChild<QLabel *>("previewRealtime");
-                if (live && !live->text().contains("--")) {
+                if (live && !analysis_display("previewRealtime").contains("--")) {
                     for (auto *child : dock->findChildren<QObject *>()) {
                         const auto position = child->property("playbackSeconds");
                         if (position.isValid()) observations.insert(QString("first_dynamic_clip_%1").arg(evidence_clip),
-                            QJsonObject{{"position", position.toDouble()}, {"elapsed", elapsed(run->since)}, {"display", live->text()}});
+                            QJsonObject{{"position", position.toDouble()}, {"elapsed", elapsed(run->since)}, {"display", analysis_display("previewRealtime")}});
                     }
                 }
             }
@@ -540,12 +572,12 @@ static void preview_test()
                 play->text() == product_text("PreviewStop")) {
                 auto *live = dock->findChild<QLabel *>("previewRealtime");
                 auto *mean = dock->findChild<QLabel *>("previewAverage");
-                if (!preview_check(live && mean && !live->text().contains("--") && (recovery ? mean->text().contains(product_text("PreviewAnalysisWindowShort")) : !mean->text().contains("--")),
+                if (!preview_check(live && mean && !analysis_display("previewRealtime").contains("--") && (evidence_clip == 2 ? analysis_display("previewAverage").contains(product_text("PreviewAnalysisWindowShort")) : !analysis_display("previewAverage").contains("--")),
                     "sequence analysis unavailable")) return;
                 const QString key = QString("analysis_clip_%1").arg(evidence_clip);
                 if (!observations.contains(key)) {
-                    observations.insert(key, mean->text());
-                    if (evidence_clip == 2 && !preview_check(mean->text() != observations.value("analysis_clip_1").toString(),
+                    observations.insert(key, analysis_display("previewAverage"));
+                    if (evidence_clip == 2 && !preview_check(analysis_display("previewAverage") != observations.value("analysis_clip_1").toString(),
                         "rerecord retained previous analysis")) return;
                 }
             }
@@ -553,26 +585,26 @@ static void preview_test()
             if (test_case == "analysis-unselected" || test_case == "analysis-inactive" || (recovery && evidence_clip == 1)) {
                 auto *live = dock->findChild<QLabel *>("previewRealtime");
                 auto *mean = dock->findChild<QLabel *>("previewAverage");
-                if (!preview_check(live && mean && live->isVisible() && mean->isVisible() &&
-                    live->text().contains("--") && mean->text().contains("--") &&
+                if (!preview_check(live && mean && dock->findChild<QLabel *>("previewRealtimeVoiceLufs")->isVisible() && dock->findChild<QLabel *>("previewAverageVoiceLufs")->isVisible() &&
+                    analysis_display("previewRealtime").contains("--") && analysis_display("previewAverage").contains("--") &&
                     dock->findChild<QLabel *>("previewAverageBalance") && dock->findChild<QLabel *>("previewAverageBalance")->text().contains(product_text("PreviewAnalysisUnrated")) &&
-                    mean->text().contains(product_text((test_case == "analysis-unselected" || recovery)
+                    analysis_display("previewAverage").contains(product_text((test_case == "analysis-unselected" || recovery)
                         ? "PreviewAnalysisSelectionMissing" : "PreviewAnalysisError")),
                     "unavailable analysis reason or unrated values missing during playback")) return;
                 observations.insert("analysis_unselected_playback", true);
-                observations.insert("analysis_unselected_notice", mean->text());
+                observations.insert("analysis_unselected_notice", analysis_display("previewAverage"));
             }
 
             if (test_case == "analysis" && elapsed(run->since) >= 4.0 &&
                 !observations.value("analysis_rows_observed").toBool()) {
                 auto *live = dock->findChild<QLabel *>("previewRealtime");
                 auto *mean = dock->findChild<QLabel *>("previewAverage");
-                if (!preview_check(live && mean && live->isVisible() && mean->isVisible() &&
-                    !live->text().contains("--") && !mean->text().contains("--") &&
+                if (!preview_check(live && mean && dock->findChild<QLabel *>("previewRealtimeVoiceLufs")->isVisible() && dock->findChild<QLabel *>("previewAverageVoiceLufs")->isVisible() &&
+                    !analysis_display("previewRealtime").contains("--") && !analysis_display("previewAverage").contains("--") &&
                     dock->findChild<QLabel *>("previewAverageBalance") && dock->findChild<QLabel *>("previewAverageBalance")->text().contains(product_text("PreviewAnalysisYellow")),
                     "recorded category values or average balance missing")) return;
-                observations.insert("analysis_realtime", live->text());
-                observations.insert("analysis_average", mean->text());
+                observations.insert("analysis_realtime", analysis_display("previewRealtime"));
+                observations.insert("analysis_average", analysis_display("previewAverage"));
                 observations.insert("analysis_rows_observed", true);
                 if (!preview_check(capture_preview_layout("preview-analysis"), "analysis layout capture failed")) return;
             }
@@ -630,6 +662,9 @@ static void preview_test()
                 for (auto *combo : dock->findChildren<QComboBox *>())
                     if (combo->findData(QString::fromUtf8(obs_source_get_name(voice))) >= 0)
                         combo->setCurrentIndex(combo->findData(QString()));
+                for (auto *combo : dock->findChildren<QComboBox *>())
+                    if (combo->count() == 3 && combo->itemData(1).toInt() == 1)
+                        combo->setCurrentIndex(0);
             }
             if (!start_loopback()) return;
             run->since = now; run->stage = 8;
@@ -646,10 +681,15 @@ static void preview_test()
             if (sequence && !(recovery && evidence_clip == 1) && elapsed(run->since) >= 0.8 && play->text() == product_text("PreviewStop")) {
                 auto *live = dock->findChild<QLabel *>("previewRealtime");
                 auto *mean = dock->findChild<QLabel *>("previewAverage");
-                if (!preview_check(live && mean && !live->text().contains("--") &&
-                    mean->text() == observations.value("analysis_clip_1").toString(),
+                if (!preview_check(live && mean && !analysis_display("previewRealtime").contains("--") &&
+                    analysis_display("previewAverage") == observations.value("analysis_clip_1").toString(),
                     "selection change altered recorded analysis during replay")) return;
                 observations.insert("analysis_replay_selection_fixed", true);
+                auto *session = dock->findChild<QObject *>("previewSession");
+                const auto replay = QJsonObject::fromVariantMap(session->property("recordedAnalysis").toMap());
+                if (!preview_check(replay == observations.value("sequence_clip_1").toObject(),
+                    "selection or mix preset changed a recorded analysis")) return;
+                observations.insert("analysis_replay_settings_fixed", true);
             }
             if (play->text() == product_text("PreviewStop")) return;
             if (!preview_check(play->text() == product_text("PreviewReplay") && obs_source_get_monitoring_enabled(voice),
@@ -711,7 +751,12 @@ static void inspect_meter()
         device->setCurrentIndex(index);
         prepare_profile_track_test(preview_test); return;
     }
+    if (qEnvironmentVariable("LBM_PREVIEW_LAYOUT") == "1") dock_container->setFixedWidth(232);
     if (!qEnvironmentVariable("LBM_PREVIEW_DEVICE").isEmpty()) { preview_test(); return; }
+    if (qEnvironmentVariable("LBM_PREVIEW_HELP") == "1") {
+        if (!preview_check(capture_preview_layout("monitor-layout"), "layout evidence save failed") ||
+            !preview_check(check_preview_help_keyboard(), "section help keyboard verification failed")) return;
+    }
     finish(true, "settings and visibility checked; voice/BGM meters responded");
 }
 

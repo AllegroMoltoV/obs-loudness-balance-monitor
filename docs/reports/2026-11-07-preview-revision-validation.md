@@ -38,4 +38,4 @@ OBS33.0.1向け候補d00bcc4からの変更を検証した。現在の計画はB
 - .deps/preview-preroll-44100-analysis-recovery/result: 対照の観測と音声監査。
 - .logs/2026110752-linux-default.log、2026110755-linux-default-result.json: Linuxのビルドと接続先観測。
 
-macOSの既定出力検証を既存の通常再生2件へ組み込んだ。3OS CIと新候補の通常環境への導入・利用者再試用は未完了。元の通常環境の未評価症状全体を解決済みとは扱わず、再試用で確認する。
+候補aa5e36dのCI42336316802はWindows・macOS・Ubuntuで成功した。macOSの44.1/48kHz通常再生はdefault指定で成功し、前後の既定UIDはAVIODeviceで一致した。物理音声取得とAudioQueue接続先の読戻しは未実施。Windows配布ZIPのSHA256は64BCA0B7729AC4C2638F8A5B0D48399C501215F5CD2E61FE80E3A88E808BE314、DLLは3D044C063970A57492B0A61DBCD2A95553E26FF45CC4D0DA03F2292625CCE0AB。CIのロード証拠と一致する配布物を、旧版と設定の退避後に通常環境へ導入した。設定ファイルのハッシュは導入前後で一致した。利用者再試用は未完了。元の未評価症状全体を解決済みとは扱わず、再試用で確認する。

@@ -28,7 +28,9 @@ QLabel *wrapped_label(const QString &text = {})
     label->setWordWrap(true);
     label->setTextFormat(Qt::PlainText);
     label->setMinimumWidth(0);
-    label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    policy.setHeightForWidth(true);
+    label->setSizePolicy(policy);
     return label;
 }
 
@@ -39,7 +41,9 @@ public:
         setWordWrap(true);
         setTextFormat(Qt::PlainText);
         setMinimumWidth(0);
-        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        policy.setHeightForWidth(true);
+        setSizePolicy(policy);
         setBuddy(check);
     }
 protected:
@@ -174,26 +178,9 @@ void LoudnessDock::setup_ui()
     preview_status_ = wrapped_label();
     preview_status_->setObjectName("previewStatus");
     preview_status_->setMargin(6);
-    preview_layout->addWidget(preview_status_);
+
     preview_recorded_track_ = wrapped_label();
     preview_recorded_track_->setObjectName("previewRecordedTrack");
-    preview_layout->addWidget(preview_recorded_track_);
-    preview_analysis_group_ = new QGroupBox(obs_module_text("PreviewAnalysisTitle"));
-    auto *analysis_layout = new QVBoxLayout(preview_analysis_group_);
-    add_section_help(analysis_layout, preview_analysis_group_, "PreviewAnalysisTitle", obs_module_text("PreviewAnalysisHelp"));
-    preview_realtime_ = wrapped_label();
-    preview_realtime_->setObjectName("previewRealtime");
-    preview_average_ = wrapped_label();
-    preview_average_->setObjectName("previewAverage");
-    preview_realtime_balance_ = wrapped_label();
-    preview_realtime_balance_->setObjectName("previewRealtimeBalance");
-    preview_average_balance_ = wrapped_label();
-    preview_average_balance_->setObjectName("previewAverageBalance");
-    analysis_layout->addWidget(preview_realtime_);
-    analysis_layout->addWidget(preview_realtime_balance_);
-    analysis_layout->addWidget(preview_average_);
-    analysis_layout->addWidget(preview_average_balance_);
-    preview_layout->addWidget(preview_analysis_group_);
 
     // Stacked actions keep their full text visible in a narrow OBS dock.
     preview_record_ = new QPushButton();
@@ -247,7 +234,8 @@ void LoudnessDock::setup_ui()
             if (choice.track < 0) { update_preview(); return; }
             const auto &config = analyzer_->config();
             preview_->configure_analysis(capture_manager_->voice_source_name(), capture_manager_->bgm_source_names(),
-                config.vad_threshold.load(), config.balance_target.load(), config.hysteresis.load());
+                config.vad_threshold.load(), config.balance_target.load(), config.hysteresis.load(),
+                config.mix_ok_threshold.load(), config.mix_warn_threshold.load());
             preview_has_played_ = false;
             preview_->prepare(unsigned(choice.track), preview_device_->currentData().toString().toStdString(),
                               preview_monitor_->isChecked());
@@ -294,133 +282,38 @@ void LoudnessDock::setup_ui()
 
 
 
-	// === Status Indicators ===
-	auto *status_group = new QGroupBox(obs_module_text("Status"));
-	auto *status_outer = new QVBoxLayout(status_group);
-	add_section_help(status_outer, status_group, "Status", QString::fromUtf8(obs_module_text("HelpBalance")) + "<br><br>" + obs_module_text("HelpMix") + "<br><br>" + obs_module_text("HelpClip"));
-	auto *status_layout = new QHBoxLayout();
-	status_outer->addLayout(status_layout);
+    auto *status_group = new QGroupBox(obs_module_text("Status"));
+    auto *status_outer = new QVBoxLayout(status_group);
+    const QString ratings_help = QString::fromUtf8(obs_module_text("HelpBalance")) + "<br><br>" +
+        obs_module_text("HelpMix") + "<br><br>" + obs_module_text("HelpClip");
+    add_section_help(status_outer, status_group, "Status", QString::fromUtf8(obs_module_text("HelpMeters")) +
+        "<br><br>" + ratings_help + "<br><br>" + obs_module_text("HelpUnits"));
+    live_monitor_ = add_monitor_widgets(status_outer, "live", false);
 
-	// Balance status
-	auto *balance_frame = new QVBoxLayout();
-	balance_status_ = new QFrame();
-	balance_status_->setFixedSize(60, 40);
-	balance_status_->setFrameStyle(QFrame::Box);
-	balance_status_label_ = new QLabel(obs_module_text("Balance"));
-	balance_status_label_->setAlignment(Qt::AlignCenter);
-	balance_status_label_->setWordWrap(true);
-	balance_status_label_->setMinimumWidth(0);
-	balance_frame->addWidget(balance_status_);
-	balance_frame->addWidget(balance_status_label_);
-	status_layout->addLayout(balance_frame);
-
-	// Mix status
-	auto *mix_frame = new QVBoxLayout();
-	mix_status_ = new QFrame();
-	mix_status_->setFixedSize(60, 40);
-	mix_status_->setFrameStyle(QFrame::Box);
-	mix_status_label_ = new QLabel(obs_module_text("Mix"));
-	mix_status_label_->setAlignment(Qt::AlignCenter);
-	mix_status_label_->setWordWrap(true);
-	mix_status_label_->setMinimumWidth(0);
-	mix_frame->addWidget(mix_status_);
-	mix_frame->addWidget(mix_status_label_);
-	status_layout->addLayout(mix_frame);
-
-	// Clip status
-	auto *clip_frame = new QVBoxLayout();
-	clip_status_ = new QFrame();
-	clip_status_->setFixedSize(60, 40);
-	clip_status_->setFrameStyle(QFrame::Box);
-	clip_status_label_ = new QLabel(obs_module_text("Clip"));
-	clip_status_label_->setAlignment(Qt::AlignCenter);
-	clip_status_label_->setWordWrap(true);
-	clip_status_label_->setMinimumWidth(0);
-	clip_frame->addWidget(clip_status_);
-	clip_frame->addWidget(clip_status_label_);
-	status_layout->addLayout(clip_frame);
-
-
-
-	// === Meters ===
-	auto *meter_group = new QGroupBox(obs_module_text("Meters"));
-	auto *meter_layout = new QVBoxLayout(meter_group);
-	add_section_help(meter_layout, meter_group, "Meters", obs_module_text("HelpMeters"));
-
-	// VAD indicator
-	auto *vad_layout = new QHBoxLayout();
-	vad_layout->addWidget(new QLabel(obs_module_text("VAD")));
-	vad_indicator_ = new QLabel();
-	vad_indicator_->setFixedSize(20, 20);
-	vad_indicator_->setStyleSheet("background-color: #888888; border-radius: 10px;");
-	vad_layout->addWidget(vad_indicator_);
-	vad_layout->addStretch();
-	meter_layout->addLayout(vad_layout);
-
-	// Voice meter
-	auto *voice_meter_layout = new QHBoxLayout();
-	voice_meter_layout->addWidget(new QLabel(obs_module_text("Voice")));
-	voice_meter_ = new QProgressBar();
-	voice_meter_->setRange(0, 100);
-	voice_meter_->setMinimumWidth(0);
-	voice_meter_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-	voice_meter_->setTextVisible(false);
-	voice_meter_->setFixedHeight(20);
-	voice_meter_layout->addWidget(voice_meter_, 1);
-	voice_lufs_label_ = new QLabel("-- LUFS");
-	voice_lufs_label_->setFixedWidth(80);
-	voice_meter_layout->addWidget(voice_lufs_label_);
-	voice_peak_label_ = new QLabel("-- dB");
-	voice_peak_label_->setFixedWidth(60);
-	voice_meter_layout->addWidget(voice_peak_label_);
-	meter_layout->addLayout(voice_meter_layout);
-
-	// BGM meter
-	auto *bgm_meter_layout = new QHBoxLayout();
-	bgm_meter_layout->addWidget(new QLabel(obs_module_text("BGM")));
-	bgm_meter_ = new QProgressBar();
-	bgm_meter_->setRange(0, 100);
-	bgm_meter_->setMinimumWidth(0);
-	bgm_meter_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-	bgm_meter_->setTextVisible(false);
-	bgm_meter_->setFixedHeight(20);
-	bgm_meter_layout->addWidget(bgm_meter_, 1);
-	bgm_lufs_label_ = new QLabel("-- LUFS");
-	bgm_lufs_label_->setFixedWidth(80);
-	bgm_meter_layout->addWidget(bgm_lufs_label_);
-	bgm_peak_label_ = new QLabel("-- dB");
-	bgm_peak_label_->setFixedWidth(60);
-	bgm_meter_layout->addWidget(bgm_peak_label_);
-	meter_layout->addLayout(bgm_meter_layout);
-
-	// Mix meter
-	auto *mix_meter_layout = new QHBoxLayout();
-	mix_meter_layout->addWidget(new QLabel(obs_module_text("MixMeter")));
-	mix_meter_ = new QProgressBar();
-	mix_meter_->setRange(0, 100);
-	mix_meter_->setMinimumWidth(0);
-	mix_meter_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-	mix_meter_->setTextVisible(false);
-	mix_meter_->setFixedHeight(20);
-	mix_meter_layout->addWidget(mix_meter_, 1);
-	mix_lufs_label_ = new QLabel("-- LUFS");
-	mix_lufs_label_->setFixedWidth(80);
-	mix_meter_layout->addWidget(mix_lufs_label_);
-	mix_peak_label_ = new QLabel("-- dB");
-	mix_peak_label_->setFixedWidth(60);
-	mix_meter_layout->addWidget(mix_peak_label_);
-	meter_layout->addLayout(mix_meter_layout);
-
-	// Delta display
-	auto *delta_layout = new QHBoxLayout();
-	delta_layout->addWidget(new QLabel(obs_module_text("Delta")));
-	delta_label_ = new QLabel("-- LU");
-	delta_label_->setStyleSheet("font-size: 18px; font-weight: bold;");
-	delta_layout->addWidget(delta_label_);
-	delta_layout->addStretch();
-	meter_layout->addLayout(delta_layout);
-
-
+    preview_layout->addWidget(preview_status_);
+    preview_layout->addWidget(preview_recorded_track_);
+    preview_analysis_group_ = new QWidget();
+    auto *analysis_layout = new QVBoxLayout(preview_analysis_group_);
+    analysis_layout->setContentsMargins(0, 0, 0, 0);
+    auto *instant_group = new QGroupBox(obs_module_text("PreviewAnalysisRealtime"));
+    auto *instant_layout = new QVBoxLayout(instant_group);
+    add_section_help(instant_layout, instant_group, "PreviewAnalysisRealtime",
+        QString::fromUtf8(obs_module_text("PreviewInstantHelp")) + "<br><br>" + ratings_help + "<br><br>" + obs_module_text("HelpUnits"));
+    preview_instant_monitor_ = add_monitor_widgets(instant_layout, "previewRealtime", false);
+    preview_realtime_ = wrapped_label();
+    preview_realtime_->setObjectName("previewRealtime");
+    instant_layout->addWidget(preview_realtime_);
+    analysis_layout->addWidget(instant_group);
+    auto *whole_group = new QGroupBox(obs_module_text("PreviewAnalysisAverage"));
+    auto *whole_layout = new QVBoxLayout(whole_group);
+    add_section_help(whole_layout, whole_group, "PreviewAnalysisAverage",
+        QString::fromUtf8(obs_module_text("PreviewWholeHelp")) + "<br><br>" + ratings_help + "<br><br>" + obs_module_text("HelpUnits"));
+    preview_whole_monitor_ = add_monitor_widgets(whole_layout, "previewAverage", true);
+    preview_average_ = wrapped_label();
+    preview_average_->setObjectName("previewAverage");
+    whole_layout->addWidget(preview_average_);
+    analysis_layout->addWidget(whole_group);
+    preview_layout->addWidget(preview_analysis_group_);
 
 	// === Settings ===
 	auto *settings_group = new QGroupBox(obs_module_text("Settings"));
@@ -464,7 +357,6 @@ void LoudnessDock::setup_ui()
 
 
     main_layout->addWidget(status_group);
-    main_layout->addWidget(meter_group);
     main_layout->addWidget(preview_group);
     main_layout->addWidget(source_group);
     main_layout->addWidget(settings_group);
@@ -523,27 +415,27 @@ void LoudnessDock::update_preview()
     using State = PreviewSession::State;
     const auto state = preview_->state();
     const bool has_recording = preview_->recorded_frames() != 0;
-    auto show_analysis = [this](QLabel *label, QLabel *balance, const char *title, double voice, double bgm, std::optional<Status> status) {
-        const auto number = [](double v) { return std::isfinite(v) ? QString::number(v, 'f', 1) : QString("--"); };
-        const char *key = !status ? "PreviewAnalysisUnrated" :
-            *status == Status::OK ? "PreviewAnalysisGreen" : *status == Status::WARN ? "PreviewAnalysisYellow" : "PreviewAnalysisRed";
-        label->setText(QString::fromUtf8(obs_module_text("PreviewAnalysisRow"))
-            .arg(obs_module_text(title), number(voice), number(bgm)));
-        balance->setText(QString::fromUtf8(obs_module_text("PreviewAnalysisBalance")).arg(obs_module_text(key)));
-        const QString color = status ? status_to_style(*status) : "background-color: #888888;";
-        balance->setStyleSheet(color + " color: #111111; padding: 5px; font-weight: bold; border-radius: 3px;");
-    };
     preview_analysis_group_->setVisible(has_recording);
     if (has_recording) {
         const auto *point = preview_->analysis_point();
-        show_analysis(preview_realtime_, preview_realtime_balance_, "PreviewAnalysisRealtime", point ? point->voice_lufs : -HUGE_VAL,
-            point ? point->bgm_lufs : -HUGE_VAL, point ? point->balance_status : std::nullopt);
+        show_monitor_values(preview_instant_monitor_,
+            {point ? point->voice_lufs : -HUGE_VAL, point ? point->bgm_lufs : -HUGE_VAL, point ? point->mix_lufs : -HUGE_VAL},
+            {point ? point->voice_peak_dbfs : -HUGE_VAL, point ? point->bgm_peak_dbfs : -HUGE_VAL, point ? point->mix_peak_dbfs : -HUGE_VAL},
+            point && point->voice_active ? point->voice_lufs - point->bgm_lufs : -HUGE_VAL, point && point->voice_active);
+        show_monitor_rating(preview_instant_monitor_.ratings[0], point ? point->balance_status : std::nullopt);
+        show_monitor_rating(preview_instant_monitor_.ratings[1], point ? point->mix_status : std::nullopt);
+        show_monitor_rating(preview_instant_monitor_.ratings[2], point ? point->clip_status : std::nullopt);
         const auto mean = preview_->analysis_summary();
-        show_analysis(preview_average_, preview_average_balance_, "PreviewAnalysisAverage", mean.voice_lufs, mean.bgm_lufs, mean.balance_status);
-        if (!preview_->analysis_realtime_notice().isEmpty())
-            preview_realtime_->setText(preview_realtime_->text() + QChar(10) + preview_->analysis_realtime_notice());
-        if (!preview_->analysis_notice().isEmpty())
-            preview_average_->setText(preview_average_->text() + QChar(10) + preview_->analysis_notice());
+        show_monitor_values(preview_whole_monitor_, {mean.voice_lufs, mean.bgm_lufs, mean.mix_lufs},
+            {mean.voice_peak_dbfs, mean.bgm_peak_dbfs, mean.mix_peak_dbfs},
+            mean.valid_points ? mean.voice_lufs - mean.bgm_lufs : -HUGE_VAL, false);
+        show_monitor_rating(preview_whole_monitor_.ratings[0], mean.balance_status);
+        show_monitor_rating(preview_whole_monitor_.ratings[1], mean.mix_status);
+        show_monitor_rating(preview_whole_monitor_.ratings[2], mean.clip_status);
+        preview_realtime_->setText(preview_->analysis_realtime_notice());
+        preview_realtime_->setVisible(!preview_realtime_->text().isEmpty());
+        preview_average_->setText(preview_->analysis_notice());
+        preview_average_->setVisible(!preview_average_->text().isEmpty());
     }
     if (state == State::playing) preview_has_played_ = true;
     const bool busy = state == State::preparing || state == State::recording ||
@@ -740,90 +632,116 @@ void LoudnessDock::on_refresh_sources()
 	refresh_source_lists();
 }
 
+LoudnessDock::MonitorWidgets LoudnessDock::add_monitor_widgets(QVBoxLayout *layout, const QString &prefix, bool whole_recording)
+{
+    MonitorWidgets widgets;
+    auto *ratings = new QHBoxLayout();
+    const std::array<const char *, 3> rating_keys{"Balance", "Mix", "Clip"};
+    const std::array<const char *, 3> metric_keys{"Voice", "BGM", "MixMeter"};
+    const std::array<const char *, 3> metric_names{"Voice", "Bgm", "Mix"};
+    for (size_t i = 0; i < rating_keys.size(); ++i) {
+        auto *column = new QVBoxLayout();
+        auto *title = wrapped_label(obs_module_text(rating_keys[i]));
+        title->setAlignment(Qt::AlignCenter);
+        column->addWidget(title);
+        widgets.ratings[i] = wrapped_label();
+        widgets.ratings[i]->setObjectName(prefix + rating_keys[i]);
+        widgets.ratings[i]->setAlignment(Qt::AlignCenter);
+        widgets.ratings[i]->setMinimumHeight(32);
+        column->addWidget(widgets.ratings[i]);
+        show_monitor_rating(widgets.ratings[i], std::nullopt);
+        ratings->addLayout(column, 1);
+    }
+    layout->addLayout(ratings);
+    if (!whole_recording) {
+        auto *vad_row = new QHBoxLayout();
+        vad_row->addWidget(wrapped_label(obs_module_text("VAD")));
+        widgets.vad = new QLabel();
+        widgets.vad->setObjectName(prefix + "Vad");
+        widgets.vad->setFixedSize(20, 20);
+        widgets.vad->setStyleSheet("background-color: #888888; border-radius: 10px;");
+        vad_row->addWidget(widgets.vad);
+        layout->addLayout(vad_row);
+    }
+    if (whole_recording) {
+        auto *columns = new QHBoxLayout();
+        columns->addWidget(wrapped_label(obs_module_text("PreviewAverageLufs")), 1);
+        auto *peak_title = wrapped_label(obs_module_text("PreviewMaximumPeak"));
+        peak_title->setAlignment(Qt::AlignRight);
+        columns->addWidget(peak_title, 1);
+        layout->addLayout(columns);
+    }
+    for (size_t i = 0; i < metric_keys.size(); ++i) {
+        layout->addWidget(wrapped_label(obs_module_text(metric_keys[i])));
+        widgets.meters[i] = new QProgressBar();
+        widgets.meters[i]->setObjectName(prefix + metric_names[i] + "Meter");
+        widgets.meters[i]->setRange(0, 100);
+        widgets.meters[i]->setMinimumWidth(0);
+        widgets.meters[i]->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        widgets.meters[i]->setTextVisible(false);
+        widgets.meters[i]->setFixedHeight(16);
+        layout->addWidget(widgets.meters[i]);
+        auto *numbers = new QHBoxLayout();
+        widgets.lufs[i] = wrapped_label("-- LUFS");
+        widgets.lufs[i]->setObjectName(prefix + metric_names[i] + "Lufs");
+        widgets.peaks[i] = wrapped_label("-- dB");
+        widgets.peaks[i]->setObjectName(prefix + metric_names[i] + "Peak");
+        widgets.peaks[i]->setAlignment(Qt::AlignRight);
+        numbers->addWidget(widgets.lufs[i], 1);
+        numbers->addWidget(widgets.peaks[i], 1);
+        layout->addLayout(numbers);
+    }
+    layout->addWidget(wrapped_label(obs_module_text(whole_recording ? "PreviewAverageDelta" : "Delta")));
+    widgets.delta = wrapped_label("-- LU");
+    widgets.delta->setObjectName(prefix + "Delta");
+    layout->addWidget(widgets.delta);
+    return widgets;
+}
+
+void LoudnessDock::show_monitor_values(const MonitorWidgets &widgets, const std::array<double, 3> &lufs,
+                                      const std::array<double, 3> &peaks, double delta, bool voice_active)
+{
+    for (size_t i = 0; i < lufs.size(); ++i) {
+        const bool measured = std::isfinite(lufs[i]);
+        widgets.meters[i]->setValue(measured ? lufs_to_meter(lufs[i]) : 0);
+        widgets.meters[i]->setEnabled(measured);
+        widgets.lufs[i]->setText(measured ? QString("%1 LUFS").arg(lufs[i], 0, 'f', 1) : QString("-- LUFS"));
+        widgets.peaks[i]->setText(std::isfinite(peaks[i]) ? QString("%1 dB").arg(peaks[i], 0, 'f', 1) : QString("-- dB"));
+    }
+    widgets.delta->setText(std::isfinite(delta) ? QString("%1%2 LU").arg(delta >= 0 ? "+" : "").arg(delta, 0, 'f', 1) : QString("-- LU"));
+    if (widgets.vad)
+        widgets.vad->setStyleSheet(voice_active ? "background-color: #4CAF50; border-radius: 10px;" :
+            "background-color: #888888; border-radius: 10px;");
+}
+
+void LoudnessDock::show_monitor_rating(QLabel *label, std::optional<Status> status)
+{
+    const char *key = !status ? "PreviewAnalysisUnrated" : *status == Status::OK ? "PreviewAnalysisGreen" :
+        *status == Status::WARN ? "PreviewAnalysisYellow" : "PreviewAnalysisRed";
+    label->setText(obs_module_text(key));
+    label->setStyleSheet((status ? status_to_style(*status) : "background-color: #888888;") +
+        QString(" color: #111111; padding: 3px; border-radius: 3px;"));
+}
+
 void LoudnessDock::update_meters()
 {
-	const auto &results = analyzer_->results();
-	bool voice_active = results.voice_active.load(std::memory_order_relaxed);
-
-	// VAD indicator
-	if (voice_active) {
-		vad_indicator_->setStyleSheet("background-color: #4CAF50; border-radius: 10px;");
-	} else {
-		vad_indicator_->setStyleSheet("background-color: #888888; border-radius: 10px;");
-	}
-
-	// Voice meter
-	double voice_lufs = results.voice_lufs.load(std::memory_order_relaxed);
-	double voice_peak = results.voice_peak_dbfs.load(std::memory_order_relaxed);
-	if (voice_active && voice_lufs != -HUGE_VAL) {
-		voice_meter_->setValue(lufs_to_meter(voice_lufs));
-		voice_meter_->setEnabled(true);
-		voice_lufs_label_->setText(QString("%1 LUFS").arg(voice_lufs, 0, 'f', 1));
-	} else {
-		voice_meter_->setValue(0);
-		voice_meter_->setEnabled(false);
-		voice_lufs_label_->setText("-- LUFS");
-	}
-	if (voice_peak != -HUGE_VAL) {
-		voice_peak_label_->setText(QString("%1 dB").arg(voice_peak, 0, 'f', 1));
-	} else {
-		voice_peak_label_->setText("-- dB");
-	}
-
-	// BGM meter
-	double bgm_lufs = results.bgm_lufs.load(std::memory_order_relaxed);
-	double bgm_peak = results.bgm_peak_dbfs.load(std::memory_order_relaxed);
-	if (bgm_lufs != -HUGE_VAL) {
-		bgm_meter_->setValue(lufs_to_meter(bgm_lufs));
-		bgm_lufs_label_->setText(QString("%1 LUFS").arg(bgm_lufs, 0, 'f', 1));
-	} else {
-		bgm_meter_->setValue(0);
-		bgm_lufs_label_->setText("-- LUFS");
-	}
-	if (bgm_peak != -HUGE_VAL) {
-		bgm_peak_label_->setText(QString("%1 dB").arg(bgm_peak, 0, 'f', 1));
-	} else {
-		bgm_peak_label_->setText("-- dB");
-	}
-
-	// Mix meter
-	double mix_lufs = results.mix_lufs.load(std::memory_order_relaxed);
-	double mix_peak = results.mix_peak_dbfs.load(std::memory_order_relaxed);
-	if (voice_active && mix_lufs != -HUGE_VAL) {
-		mix_meter_->setValue(lufs_to_meter(mix_lufs));
-		mix_meter_->setEnabled(true);
-		mix_lufs_label_->setText(QString("%1 LUFS").arg(mix_lufs, 0, 'f', 1));
-	} else {
-		mix_meter_->setValue(0);
-		mix_meter_->setEnabled(false);
-		mix_lufs_label_->setText("-- LUFS");
-	}
-	if (mix_peak != -HUGE_VAL) {
-		mix_peak_label_->setText(QString("%1 dB").arg(mix_peak, 0, 'f', 1));
-	} else {
-		mix_peak_label_->setText("-- dB");
-	}
-
-	// Delta
-	double delta = results.balance_delta.load(std::memory_order_relaxed);
-	if (voice_active && voice_lufs != -HUGE_VAL && bgm_lufs != -HUGE_VAL) {
-		delta_label_->setText(QString("%1%2 LU").arg(delta >= 0 ? "+" : "").arg(delta, 0, 'f', 1));
-	} else {
-		delta_label_->setText("-- LU");
-	}
+    const auto &results = analyzer_->results();
+    const bool active = results.voice_active.load(std::memory_order_relaxed);
+    const double voice = results.voice_lufs.load(std::memory_order_relaxed);
+    const double bgm = results.bgm_lufs.load(std::memory_order_relaxed);
+    show_monitor_values(live_monitor_,
+        {active ? voice : -HUGE_VAL, bgm, active ? results.mix_lufs.load(std::memory_order_relaxed) : -HUGE_VAL},
+        {results.voice_peak_dbfs.load(std::memory_order_relaxed), results.bgm_peak_dbfs.load(std::memory_order_relaxed),
+         results.mix_peak_dbfs.load(std::memory_order_relaxed)},
+        active && std::isfinite(voice) && std::isfinite(bgm) ? results.balance_delta.load(std::memory_order_relaxed) : -HUGE_VAL, active);
 }
 
 void LoudnessDock::update_status_colors()
 {
-	const auto &results = analyzer_->results();
-
-	Status balance = results.balance_status.load(std::memory_order_relaxed);
-	Status mix = results.mix_status.load(std::memory_order_relaxed);
-	Status clip = results.clip_status.load(std::memory_order_relaxed);
-
-	balance_status_->setStyleSheet(status_to_style(balance));
-	mix_status_->setStyleSheet(status_to_style(mix));
-	clip_status_->setStyleSheet(status_to_style(clip));
+    const auto &results = analyzer_->results();
+    show_monitor_rating(live_monitor_.ratings[0], results.balance_status.load(std::memory_order_relaxed));
+    show_monitor_rating(live_monitor_.ratings[1], results.mix_status.load(std::memory_order_relaxed));
+    show_monitor_rating(live_monitor_.ratings[2], results.clip_status.load(std::memory_order_relaxed));
 }
 
 int LoudnessDock::lufs_to_meter(double lufs) const

@@ -23,7 +23,7 @@ public:
     explicit PreviewSession(QObject *parent = nullptr);
     ~PreviewSession() override;
     void configure_analysis(const std::string &voice, const std::vector<std::string> &bgm,
-                            double threshold, double target, double hysteresis);
+                            double threshold, double target, double hysteresis, double mix_ok, double mix_warn);
     PreviewAnalysisSummary analysis_summary() const;
     QVariantMap recorded_analysis() const;
     const PreviewAnalysisPoint *analysis_point() const;
@@ -61,6 +61,7 @@ private:
     std::string analysis_error_, selected_voice_;
     std::vector<std::string> selected_bgm_;
     double vad_threshold_ = -40.0, balance_target_ = 6.0, hysteresis_ = 0.5;
+    double mix_ok_ = -18.0, mix_warn_ = -22.0;
     std::atomic<double> playback_position_{-1.0};
     static void audio(void *data, size_t mix, struct audio_data *packet);
     void detach();

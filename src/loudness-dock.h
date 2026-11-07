@@ -18,6 +18,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -65,26 +66,21 @@ private:
 	std::vector<QCheckBox *> bgm_checkboxes_;
 	QPushButton *refresh_button_{nullptr};
 
-	// UI Components - Meters
-	QProgressBar *voice_meter_{nullptr};
-	QProgressBar *bgm_meter_{nullptr};
-	QProgressBar *mix_meter_{nullptr};
-	QLabel *voice_lufs_label_{nullptr};
-	QLabel *bgm_lufs_label_{nullptr};
-	QLabel *mix_lufs_label_{nullptr};
-	QLabel *voice_peak_label_{nullptr};
-	QLabel *bgm_peak_label_{nullptr};
-	QLabel *mix_peak_label_{nullptr};
-	QLabel *delta_label_{nullptr};
-	QLabel *vad_indicator_{nullptr};
-
-	// UI Components - Status
-	QFrame *balance_status_{nullptr};
-	QFrame *mix_status_{nullptr};
-	QFrame *clip_status_{nullptr};
-	QLabel *balance_status_label_{nullptr};
-	QLabel *mix_status_label_{nullptr};
-	QLabel *clip_status_label_{nullptr};
+    struct MonitorWidgets {
+        std::array<QLabel *, 3> ratings{};
+        std::array<QProgressBar *, 3> meters{};
+        std::array<QLabel *, 3> lufs{};
+        std::array<QLabel *, 3> peaks{};
+        QLabel *vad{nullptr};
+        QLabel *delta{nullptr};
+    };
+    MonitorWidgets add_monitor_widgets(QVBoxLayout *layout, const QString &prefix, bool whole_recording);
+    void show_monitor_values(const MonitorWidgets &widgets, const std::array<double, 3> &lufs,
+                             const std::array<double, 3> &peaks, double delta, bool voice_active);
+    void show_monitor_rating(QLabel *label, std::optional<Status> status);
+    MonitorWidgets live_monitor_;
+    MonitorWidgets preview_instant_monitor_;
+    MonitorWidgets preview_whole_monitor_;
 
 	// UI Components - Settings
 	QSlider *vad_threshold_slider_{nullptr};
@@ -102,8 +98,6 @@ private:
     QWidget *preview_analysis_group_{nullptr};
     QLabel *preview_realtime_{nullptr};
     QLabel *preview_average_{nullptr};
-    QLabel *preview_realtime_balance_{nullptr};
-    QLabel *preview_average_balance_{nullptr};
     QPushButton *preview_record_{nullptr};
     QPushButton *preview_play_{nullptr};
     QPushButton *preview_refresh_{nullptr};

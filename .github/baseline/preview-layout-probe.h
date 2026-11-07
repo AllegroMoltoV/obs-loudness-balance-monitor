@@ -78,7 +78,7 @@ static bool check_preview_help_keyboard()
     QPointer<QWidget> original_focus = QApplication::focusWidget();
     QJsonArray results;
     bool passed = true;
-    for (const char *section : {"PreviewTitle", "SourceSelection", "Status", "Meters", "Settings"}) {
+    for (const char *section : {"PreviewTitle", "SourceSelection", "Status", "PreviewAnalysisRealtime", "PreviewAnalysisAverage", "Settings"}) {
         const QString object_name = QString("help_%1").arg(section);
         auto *help = dock->findChild<QToolButton *>(object_name);
         QJsonObject result{{"button", object_name}};

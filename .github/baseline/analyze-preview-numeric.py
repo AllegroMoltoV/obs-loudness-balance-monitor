@@ -23,9 +23,10 @@ rows = list(csv.DictReader(io.StringIO(run.stdout)))
 mean = rows.pop()
 errors = []
 maximum = 0.0
+maximum_peak = 0.0
 
-def number(actual, expected, location):
-    global maximum
+def number(actual, expected, location, is_peak=False):
+    global maximum, maximum_peak
     expected = float(expected)
     if not math.isfinite(expected):
         if actual is not None:
@@ -35,7 +36,10 @@ def number(actual, expected, location):
         errors.append(location + ": expected finite")
         return
     difference = abs(actual - expected)
-    maximum = max(maximum, difference)
+    if is_peak:
+        maximum_peak = max(maximum_peak, difference)
+    else:
+        maximum = max(maximum, difference)
     # Same libebur128 primitive, independent input path and aggregation.
     if difference > 1e-6:
         errors.append(location + ": numerical mismatch")
@@ -44,17 +48,18 @@ points = product["points"]
 if len(points) != len(rows):
     errors.append("point count mismatch")
 for i, (actual, expected) in enumerate(zip(points, rows)):
-    for key in ("frame", "status"):
+    for key in ("frame", "status", "mix_status", "clip_status"):
         if actual[key] != int(expected[key]):
             errors.append(f"point {i} {key} mismatch")
     if actual["active"] != bool(int(expected["active"])):
         errors.append(f"point {i} VAD mismatch")
-    for key in ("voice", "bgm"):
-        number(actual[key], expected[key], f"point {i} {key}")
-for key in ("voice", "bgm"):
-    number(product[key], mean[key], "mean " + key)
-if product["valid_points"] != int(mean["active"]) or product["status"] != int(mean["status"]):
-    errors.append("mean interval count or rating mismatch")
+    for key in ("voice", "bgm", "mix", "voice_peak", "bgm_peak", "mix_peak"):
+        number(actual[key], expected[key], f"point {i} {key}", key.endswith("_peak"))
+for key in ("voice", "bgm", "mix", "voice_peak", "bgm_peak", "mix_peak"):
+    number(product[key], mean[key], "mean " + key, key.endswith("_peak"))
+for key in ("valid_points", "mix_valid_points", "status", "mix_status", "clip_status"):
+    if product[key] != int(mean[key]):
+        errors.append("mean " + key + " mismatch")
 if not any(not x["active"] and x["frame"] > 144000 for x in points):
     errors.append("speech pause was not exercised")
 if not any(x["active"] and x["frame"] > 48000 * 8 for x in points):
@@ -62,8 +67,9 @@ if not any(x["active"] and x["frame"] > 48000 * 8 for x in points):
 if not ui["passed"]:
     errors.append("product UI scenario failed")
 result = {"passed": not errors, "points": len(points), "valid_points": product["valid_points"],
-          "maximum_lufs_difference": maximum, "errors": errors,
-          "reference": "OBS raw category tracks + libebur128 primitives; independent VAD, averaging and rating"}
+          "mix_valid_points": product["mix_valid_points"],
+          "maximum_lufs_difference": maximum, "maximum_peak_db_difference": maximum_peak, "errors": errors,
+          "reference": "OBS raw category tracks + libebur128 primitives; independent VAD, float mix, averaging, interval/whole-recording peaks and rating"}
 with a.output.open("x", encoding="utf-8") as output:
     json.dump(result, output, indent=2)
 print(json.dumps(result))

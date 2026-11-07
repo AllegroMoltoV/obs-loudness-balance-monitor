@@ -12,10 +12,11 @@ namespace lbm {
 PreviewSession::PreviewSession(QObject *parent) : QObject(parent) { PreviewMonitors::recover(); }
 PreviewSession::~PreviewSession() { cancel(); }
 void PreviewSession::configure_analysis(const std::string &voice, const std::vector<std::string> &bgm,
-                                       double threshold, double target, double hysteresis)
+                                       double threshold, double target, double hysteresis, double mix_ok, double mix_warn)
 {
     selected_voice_ = voice; selected_bgm_ = bgm;
     vad_threshold_ = threshold; balance_target_ = target; hysteresis_ = hysteresis;
+    mix_ok_ = mix_ok; mix_warn_ = mix_warn;
 }
 void PreviewSession::stop_analysis()
 {
@@ -37,10 +38,18 @@ QVariantMap PreviewSession::recorded_analysis() const
     QVariantList points;
     for (const auto &point : analysis_.series())
         points.append(QVariantMap{{"frame", qulonglong(point.frame_position)}, {"voice", number(point.voice_lufs)},
-            {"bgm", number(point.bgm_lufs)}, {"active", point.voice_active}, {"status", status(point.balance_status)}});
+            {"bgm", number(point.bgm_lufs)}, {"mix", number(point.mix_lufs)},
+            {"voice_peak", number(point.voice_peak_dbfs)}, {"bgm_peak", number(point.bgm_peak_dbfs)},
+            {"mix_peak", number(point.mix_peak_dbfs)}, {"active", point.voice_active},
+            {"status", status(point.balance_status)}, {"mix_status", status(point.mix_status)},
+            {"clip_status", status(point.clip_status)}});
     const auto mean = analysis_.summary();
     return {{"points", points}, {"voice", number(mean.voice_lufs)}, {"bgm", number(mean.bgm_lufs)},
-        {"valid_points", mean.valid_points}, {"status", status(mean.balance_status)}};
+        {"mix", number(mean.mix_lufs)}, {"voice_peak", number(mean.voice_peak_dbfs)},
+        {"bgm_peak", number(mean.bgm_peak_dbfs)}, {"mix_peak", number(mean.mix_peak_dbfs)},
+        {"frames", qulonglong(mean.frames)}, {"valid_points", mean.valid_points},
+        {"mix_valid_points", mean.mix_valid_points}, {"status", status(mean.balance_status)},
+        {"mix_status", status(mean.mix_status)}, {"clip_status", status(mean.clip_status)}};
 }
 const PreviewAnalysisPoint *PreviewSession::analysis_point() const
 {
@@ -227,7 +236,7 @@ void PreviewSession::tick()
         analysis_ok_ = false;
         analysis_error_.clear();
         try {
-            analysis_ok_ = analysis_.reset(rate_, vad_threshold_, balance_target_, hysteresis_) &&
+            analysis_ok_ = analysis_.reset(rate_, vad_threshold_, balance_target_, hysteresis_, mix_ok_, mix_warn_) &&
                 category_.start(selected_voice_, selected_bgm_, track_, rate_);
             if (!analysis_ok_) {
                 analysis_error_ = category_.error();
