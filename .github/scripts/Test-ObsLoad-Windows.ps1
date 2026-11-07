@@ -126,7 +126,7 @@ try {
         if (!(Test-Path -LiteralPath $ResultPath)) { throw "Probe result missing: $Phase" }
         $Result = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
         if ($Result.passed -ne $true -or $Result.obs -ne '33.0.1' -or $Result.phase -ne $Phase) { throw "Probe failed: $Phase $($Result.reason)" }
-        if (!$Result.product_binary_path -or [IO.Path]::GetFullPath($Result.product_binary_path) -ne [IO.Path]::GetFullPath($ExpectedDll)) { throw "Unexpected loaded product DLL: $($Result.product_binary_path)" }
+        if (!$Result.product_binary_path -or [IO.Path]::GetFullPath($Result.product_binary_path, [IO.Path]::GetFullPath($BinaryDir)) -ne [IO.Path]::GetFullPath($ExpectedDll)) { throw "Unexpected loaded product DLL: $($Result.product_binary_path)" }
         if (!(Test-Path -LiteralPath (Join-Path $PhaseDir 'dock.png'))) { throw "Dock screenshot missing: $Phase" }
         $Logs = @(Get-ChildItem -LiteralPath (Join-Path $ConfigDir 'logs') -Filter '*.txt')
         if (!$Logs.Count) { throw 'OBS log missing.' }
