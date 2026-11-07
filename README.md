@@ -56,7 +56,7 @@ macOSのIntel実機と古いOS、Linuxの他ディストリビューションと
 
 ### Windows
 
-1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases)から`loudness-balance-monitor-0.2.0-windows-x64.zip`をダウンロードしてください。
+1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases)から`loudness-balance-monitor-1.0.0-windows-x64.zip`をダウンロードしてください。
 2. OBS Studioを終了し、ZIPを展開してください。
 3. ZIP内の`loudness-balance-monitor`フォルダーを`%PROGRAMDATA%\obs-studio\plugins`へコピーしてください。ZIPルートの`include`と`lib`はインストールに使いません。
 
@@ -118,10 +118,10 @@ C:\ProgramData\obs-studio\plugins\
 
 ## ソースからのビルド
 
-v0.2.0のソースを取得してください。以降のコマンドは取得したディレクトリで実行してください。
+v1.0.0のソースを取得してください。以降のコマンドは取得したディレクトリで実行してください。
 
 ```sh
-git clone --branch v0.2.0 https://github.com/AllegroMoltoV/obs-loudness-balance-monitor.git
+git clone --branch v1.0.0 https://github.com/AllegroMoltoV/obs-loudness-balance-monitor.git
 cd obs-loudness-balance-monitor
 ```
 
@@ -188,7 +188,7 @@ Flatpak版OBSへの導入手順には対応していません。
 ラウドネスの計算には[libebur128](https://github.com/jiixyj/libebur128) v1.2.6を静的リンクしています。libebur128のライセンスはMITです。
 
 ---
-## v0.2.0の変更
+## v1.0.0の変更
 
 録音モニタ、OS既定の試聴出力、録音の瞬時値・録音全体の評価、幅に応じたドック配置、使い方・用語ガイドを追加しました。ビルドと検証の基準をOBS Studio 33.0.1へ更新しました。
 
