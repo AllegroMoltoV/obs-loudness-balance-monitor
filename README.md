@@ -90,22 +90,35 @@ macOSのIntel実機と古いOS、Linuxの他ディストリビューションと
 
 ### Windows
 
-1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases)から`loudness-balance-monitor-1.0.1-windows-x64.zip`をダウンロードしてください。
+1. [Releases](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases)から最新のWindows x64 ZIPをダウンロードしてください。
 2. OBS Studioを終了し、ZIPを展開してください。
-3. ZIP内の`loudness-balance-monitor`フォルダーを`%PROGRAMDATA%\obs-studio\plugins`へコピーしてください。ZIPルートの`include`と`lib`はインストールに使いません。
+3. エクスプローラーのアドレス欄に`%PROGRAMDATA%`を入力して開いてください。`obs-studio`フォルダー、その中の`plugins`フォルダーの順に開いてください。フォルダーがない場合は、右クリック→「新規作成」→「フォルダー」で、それぞれ同じ名前のフォルダーを作成してください。
+4. ZIP内の`loudness-balance-monitor`フォルダーを、その`plugins`フォルダーへコピーしてください。Windowsから管理者の許可を求められた場合は、許可して続行してください。
 
 ```text
 C:\ProgramData\obs-studio\plugins\
 └─ loudness-balance-monitor\
-   ├─ bin\64bit\loudness-balance-monitor.dll
+   ├─ loudness-balance-monitor.dll
    └─ data\locale\
       ├─ en-US.ini
       └─ ja-JP.ini
 ```
 
-`ProgramData`は隠しフォルダーです。エクスプローラーのアドレス欄へ`%PROGRAMDATA%\obs-studio\plugins`を入力すると開けます。
+`ProgramData`は隠しフォルダーです。アドレス欄にパスを入力すると、隠しフォルダーの表示設定を変えずに開けます。`loudness-balance-monitor`フォルダーを二重に作成しないでください。
 
-4. OBS Studioを起動し、メニューの「ドック」→「音量バランスモニター」を選択してください。次回以降の起動時に、OBSの正常終了時に保存したドックの表示状態を復元します。
+5. OBS Studioを起動し、メニューの「ドック」→「音量バランスモニター」を選択してください。次回以降の起動時に、OBSの正常終了時に保存したドックの表示状態を復元します。
+
+#### 旧版からの更新
+
+OBSを終了し、同じ場所へ新しい製品フォルダーを上書きしてください。OBSの設定フォルダーや、他のプラグインを削除する必要はありません。1.0.1以前の`bin\64bit`に旧DLLが残っていても、OBS 33では新構成のDLLを優先します。
+
+OBS本体の`obs-plugins\64bit`へ旧版を手動配置した場合は、当該製品のDLLと`data\obs-plugins\loudness-balance-monitor`だけを別の場所へ退避してから、上記のProgramDataへ導入してください。`obs-plugins`や`data`全体を移動・削除しないでください。
+
+#### ポータブル版OBS
+
+OBSを終了し、OBS本体のルートにある`plugins`フォルダーへ製品フォルダーをコピーしてください。`plugins`がない場合は作成してください。配置は`<OBSのルート>\plugins\loudness-balance-monitor\loudness-balance-monitor.dll`です。通常版のProgramDataへ配置しても、ポータブル版からは読み込みません。
+
+1.0.2以降のWindows ZIPはOBS 33の新構成を使用します。本製品の対象バージョンはOBS 33.0.1です。公式の[旧配置に関する案内](https://obsproject.com/kb/legacy-plugin-locations)と[開発者向けの新構成](https://obsproject.com/kb/legacy-plugin-developer-info)も参照してください。
 
 ### macOS・Linux
 
@@ -152,10 +165,10 @@ C:\ProgramData\obs-studio\plugins\
 
 ## ソースからのビルド
 
-v1.0.1のソースを取得してください。以降のコマンドは取得したディレクトリで実行してください。
+v1.0.2のソースを取得してください。以降のコマンドは取得したディレクトリで実行してください。
 
 ```sh
-git clone --branch v1.0.1 https://github.com/AllegroMoltoV/obs-loudness-balance-monitor.git
+git clone --branch v1.0.2 https://github.com/AllegroMoltoV/obs-loudness-balance-monitor.git
 cd obs-loudness-balance-monitor
 ```
 
@@ -222,6 +235,10 @@ Flatpak版OBSへの導入手順には対応していません。
 ラウドネスの計算には[libebur128](https://github.com/jiixyj/libebur128) v1.2.6を静的リンクしています。libebur128のライセンスはMITです。
 
 ---
+## v1.0.2の変更
+
+Windows ZIPをOBS 33の新しいプラグイン構成へ変更しました。フォルダーの作成と旧版からの更新手順を追加しました。音声処理と評価ロジックの変更はありません。
+
 ## v1.0.1の変更
 
 リアルタイムモニタのヘルプとREADMEに、バランス・ミックス・クリップの評価基準を追加しました。すべてのミックス基準を表で比較できます。評価ロジックと音声処理の変更はありません。

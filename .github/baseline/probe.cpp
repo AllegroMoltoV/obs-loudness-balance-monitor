@@ -142,6 +142,8 @@ static void finish_deferred(bool passed, const QString &reason)
 			   {"obs", obs_get_version_string()},
 			   {"phase", phase},
 			   {"observations", observations}};
+	if (auto *module = obs_get_module("loudness-balance-monitor"))
+		result.insert("product_binary_path", QString::fromUtf8(obs_get_module_binary_path(module)));
 #ifdef __APPLE__
 	QJsonArray loaded_images;
 	for (uint32_t index = 0; index < _dyld_image_count(); ++index)
