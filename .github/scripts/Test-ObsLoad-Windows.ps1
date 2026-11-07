@@ -76,6 +76,7 @@ if ((Get-FileHash -LiteralPath $InstalledDll).Hash -ne (Get-FileHash -LiteralPat
 }
 $ProfileDir = Join-Path $ConfigDir 'basic/profiles/Baseline'
 $SceneDir = Join-Path $ConfigDir 'basic/scenes'
+function Initialize-TestConfig {
 New-Item -ItemType Directory -Path $ProfileDir, $SceneDir -Force | Out-Null
 $UserIni = "[General]`nFirstRun=true`n[Basic]`nProfile=Baseline`nProfileDir=Baseline`nSceneCollection=Baseline`nSceneCollectionFile=Baseline.json`nConfigOnNewProfile=false`n[BasicWindow]`nPreviewEnabled=false`n"
 Set-Content -LiteralPath (Join-Path $ConfigDir 'user.ini') -Value $UserIni -Encoding utf8
@@ -90,6 +91,8 @@ $InitialScene = @{
     current_program_scene = 'Scene'
 } | ConvertTo-Json -Depth 8
 Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Value $InitialScene -Encoding utf8
+}
+Initialize-TestConfig
 $PreviousResultDir = $env:LBM_BASELINE_RESULT_DIR
 $PreviousPhase = $env:LBM_BASELINE_PHASE
 $Process = $null
@@ -97,8 +100,15 @@ try {
     foreach ($Stage in @('fresh', 'old-setup', 'upgrade', 'restore-hidden')) {
         $Phase = switch ($Stage) { 'fresh' { 'setup' }; 'old-setup' { 'setup' }; 'upgrade' { 'restore' }; default { 'restore-hidden' } }
         if ($Stage -eq 'old-setup') {
-            # Start the legacy setup with its own sources instead of the fresh-install scene.
-            Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Value $InitialScene -Encoding utf8
+            # Preserve the fresh-install evidence and start an independent legacy configuration.
+            $FreshConfig = [IO.Path]::GetFullPath((Join-Path $OutputRoot 'fresh-config'))
+            $ResolvedConfig = [IO.Path]::GetFullPath($ConfigDir)
+            $ExpectedConfig = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'obs-studio'))
+            if ($ResolvedConfig -ne $ExpectedConfig -or
+                [IO.Path]::GetDirectoryName($FreshConfig) -ne $OutputRoot -or
+                (Test-Path -LiteralPath $FreshConfig)) { throw 'Unexpected disposable configuration paths.' }
+            Move-Item -LiteralPath $ResolvedConfig -Destination $FreshConfig
+            Initialize-TestConfig
             # Remove only the new-layout binaries inside this disposable installation.
             $InstallRoot = [IO.Path]::GetFullPath($ProductInstall)
             foreach ($Name in @('loudness-balance-monitor.dll', 'loudness-balance-monitor.pdb')) {
