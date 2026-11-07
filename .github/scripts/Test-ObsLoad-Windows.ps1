@@ -21,6 +21,9 @@ foreach ($Existing in @($ConfigDir, $ProductInstall, $ProbeInstall)) {
     if (Test-Path -LiteralPath $Existing) { throw "Fresh runner required; existing state: $Existing" }
 }
 if (@(Get-Process -Name obs64 -ErrorAction SilentlyContinue).Count) { throw 'An OBS process already exists.' }
+foreach ($Variable in @('OBS_PLUGINS_PATH', 'OBS_LEGACY_PLUGINS_PATH', 'OBS_LEGACY_PLUGINS_DATA_PATH')) {
+    if ([Environment]::GetEnvironmentVariable($Variable)) { throw "External plugin search path is set: $Variable" }
+}
 
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if (!$OutputRoot) { $OutputRoot = Join-Path $ProjectRoot '.deps/obs-load-windows' }
@@ -35,9 +38,18 @@ foreach ($File in @($PackagePath, $ProbeDll)) {
 New-Item -ItemType Directory -Path $OutputRoot | Out-Null
 $PackageDir = Join-Path $OutputRoot 'package'
 Expand-Archive -LiteralPath $PackagePath -DestinationPath $PackageDir
-$ProductDll = Join-Path $PackageDir 'loudness-balance-monitor/bin/64bit/loudness-balance-monitor.dll'
+$ProductDll = Join-Path $PackageDir 'loudness-balance-monitor/loudness-balance-monitor.dll'
 $ProductData = Join-Path $PackageDir 'loudness-balance-monitor/data'
 if (!(Test-Path -LiteralPath $ProductDll -PathType Leaf) -or !(Test-Path -LiteralPath $ProductData -PathType Container)) { throw 'Unexpected product package layout.' }
+if (Test-Path -LiteralPath (Join-Path $PackageDir 'loudness-balance-monitor/bin/64bit')) { throw 'Legacy binary layout found in the new distribution.' }
+$OldPackagePath = Join-Path $OutputRoot 'loudness-balance-monitor-1.0.1-windows-x64.zip'
+Invoke-WebRequest -Uri 'https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases/download/v1.0.1/loudness-balance-monitor-1.0.1-windows-x64.zip' -OutFile $OldPackagePath
+$OldPackageHash = (Get-FileHash -LiteralPath $OldPackagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($OldPackageHash -ne '755c85def433f7807534c22d2b15d46c4e76ca16fe7b26a302d0c689e9c99ad5') { throw 'Official v1.0.1 package checksum mismatch.' }
+$OldPackageDir = Join-Path $OutputRoot 'old-package'
+Expand-Archive -LiteralPath $OldPackagePath -DestinationPath $OldPackageDir
+$OldProductDll = Join-Path $OldPackageDir 'loudness-balance-monitor/bin/64bit/loudness-balance-monitor.dll'
+if (!(Test-Path -LiteralPath $OldProductDll -PathType Leaf)) { throw 'Unexpected v1.0.1 package layout.' }
 $ResultDir = Join-Path $OutputRoot 'results'
 New-Item -ItemType Directory -Path $ResultDir | Out-Null
 if (!$ArchivePath) {
@@ -55,34 +67,65 @@ if (!(Test-Path -LiteralPath $ObsExe -PathType Leaf)) { throw 'Unexpected OBS ar
 New-Item -ItemType Directory -Path $SystemPlugins -Force | Out-Null
 # Install the distribution's normal ProgramData layout on the disposable runner.
 Copy-Item -LiteralPath (Join-Path $PackageDir 'loudness-balance-monitor') -Destination $ProductInstall -Recurse
-$ProbeBinaryDir = Join-Path $ProbeInstall 'bin/64bit'
-New-Item -ItemType Directory -Path $ProbeBinaryDir -Force | Out-Null
-Copy-Item -LiteralPath $ProbeDll -Destination $ProbeBinaryDir
-$InstalledDll = Join-Path $ProductInstall 'bin/64bit/loudness-balance-monitor.dll'
+New-Item -ItemType Directory -Path $ProbeInstall -Force | Out-Null
+Copy-Item -LiteralPath $ProbeDll -Destination $ProbeInstall
+$InstalledDll = Join-Path $ProductInstall 'loudness-balance-monitor.dll'
+$OldInstalledDll = Join-Path $ProductInstall 'bin/64bit/loudness-balance-monitor.dll'
 if ((Get-FileHash -LiteralPath $InstalledDll).Hash -ne (Get-FileHash -LiteralPath $ProductDll).Hash) {
     throw 'Installed DLL differs from the distribution.'
 }
 $ProfileDir = Join-Path $ConfigDir 'basic/profiles/Baseline'
 $SceneDir = Join-Path $ConfigDir 'basic/scenes'
+function Initialize-TestConfig {
 New-Item -ItemType Directory -Path $ProfileDir, $SceneDir -Force | Out-Null
 $UserIni = "[General]`nFirstRun=true`n[Basic]`nProfile=Baseline`nProfileDir=Baseline`nSceneCollection=Baseline`nSceneCollectionFile=Baseline.json`nConfigOnNewProfile=false`n[BasicWindow]`nPreviewEnabled=false`n"
 Set-Content -LiteralPath (Join-Path $ConfigDir 'user.ini') -Value $UserIni -Encoding utf8
 Set-Content -LiteralPath (Join-Path $ConfigDir 'global.ini') -Value "[General]`nEnableAutoUpdates=false`n" -Encoding utf8
 $ProfileIni = "[General]`nName=Baseline`n[Audio]`nSampleRate=48000`nChannelSetup=Stereo`nMonitoringDeviceId=default`n[Video]`nBaseCX=640`nBaseCY=360`nOutputCX=640`nOutputCY=360`nFPSType=0`nFPSCommon=30`n"
 Set-Content -LiteralPath (Join-Path $ProfileDir 'basic.ini') -Value $ProfileIni -Encoding utf8
-@{
+$InitialScene = @{
     name = 'Baseline'
     sources = @(@{ name = 'Scene'; id = 'scene'; settings = @{ items = @() } })
     scene_order = @(@{ name = 'Scene' })
     current_scene = 'Scene'
     current_program_scene = 'Scene'
-} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Encoding utf8
+} | ConvertTo-Json -Depth 8
+Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Value $InitialScene -Encoding utf8
+}
+Initialize-TestConfig
 $PreviousResultDir = $env:LBM_BASELINE_RESULT_DIR
 $PreviousPhase = $env:LBM_BASELINE_PHASE
 $Process = $null
 try {
-    foreach ($Phase in @('setup', 'restore', 'restore-hidden')) {
-        $PhaseDir = Join-Path $ResultDir $Phase
+    foreach ($Stage in @('fresh', 'old-setup', 'upgrade', 'restore-hidden')) {
+        $Phase = switch ($Stage) { 'fresh' { 'setup' }; 'old-setup' { 'setup' }; 'upgrade' { 'restore' }; default { 'restore-hidden' } }
+        if ($Stage -eq 'old-setup') {
+            # Preserve the fresh-install evidence and start an independent legacy configuration.
+            $FreshConfig = [IO.Path]::GetFullPath((Join-Path $OutputRoot 'fresh-config'))
+            $ResolvedConfig = [IO.Path]::GetFullPath($ConfigDir)
+            $ExpectedConfig = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'obs-studio'))
+            if ($ResolvedConfig -ne $ExpectedConfig -or
+                [IO.Path]::GetDirectoryName($FreshConfig) -ne $OutputRoot -or
+                (Test-Path -LiteralPath $FreshConfig)) { throw 'Unexpected disposable configuration paths.' }
+            Move-Item -LiteralPath $ResolvedConfig -Destination $FreshConfig
+            Initialize-TestConfig
+            # Remove only the new-layout binaries inside this disposable installation.
+            $InstallRoot = [IO.Path]::GetFullPath($ProductInstall)
+            foreach ($Name in @('loudness-balance-monitor.dll', 'loudness-balance-monitor.pdb')) {
+                $RemovePath = [IO.Path]::GetFullPath((Join-Path $InstallRoot $Name))
+                if ([IO.Path]::GetDirectoryName($RemovePath) -ne $InstallRoot) { throw 'Binary removal escaped the disposable product directory.' }
+                if (Test-Path -LiteralPath $RemovePath -PathType Leaf) { Remove-Item -LiteralPath $RemovePath }
+            }
+            Get-ChildItem -LiteralPath (Join-Path $OldPackageDir 'loudness-balance-monitor') | Copy-Item -Destination $ProductInstall -Recurse -Force
+        } elseif ($Stage -eq 'upgrade') {
+            # Keep the legacy bin tree to verify new-layout precedence during upgrades.
+            Get-ChildItem -LiteralPath (Join-Path $PackageDir 'loudness-balance-monitor') | Copy-Item -Destination $ProductInstall -Recurse -Force
+        }
+        $ExpectedDll = if ($Stage -eq 'old-setup') { $OldInstalledDll } else { $InstalledDll }
+        $SourceDll = if ($Stage -eq 'old-setup') { $OldProductDll } else { $ProductDll }
+        if ((Get-FileHash -LiteralPath $ExpectedDll).Hash -ne (Get-FileHash -LiteralPath $SourceDll).Hash) { throw "Installed DLL differs from the distribution: $Stage" }
+        if ($Stage -in @('upgrade', 'restore-hidden') -and (Get-FileHash -LiteralPath $OldInstalledDll).Hash -ne (Get-FileHash -LiteralPath $OldProductDll).Hash) { throw 'Legacy DLL was not preserved during upgrade.' }
+        $PhaseDir = Join-Path $ResultDir $Stage
         New-Item -ItemType Directory -Path $PhaseDir | Out-Null
         $env:LBM_BASELINE_RESULT_DIR = $PhaseDir
         $env:LBM_BASELINE_PHASE = $Phase
@@ -93,6 +136,7 @@ try {
         if (!(Test-Path -LiteralPath $ResultPath)) { throw "Probe result missing: $Phase" }
         $Result = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
         if ($Result.passed -ne $true -or $Result.obs -ne '33.0.1' -or $Result.phase -ne $Phase) { throw "Probe failed: $Phase $($Result.reason)" }
+        if (!$Result.product_binary_path -or [IO.Path]::GetFullPath($Result.product_binary_path, [IO.Path]::GetFullPath($BinaryDir)) -ne [IO.Path]::GetFullPath($ExpectedDll)) { throw "Unexpected loaded product DLL: $($Result.product_binary_path)" }
         if (!(Test-Path -LiteralPath (Join-Path $PhaseDir 'dock.png'))) { throw "Dock screenshot missing: $Phase" }
         $Logs = @(Get-ChildItem -LiteralPath (Join-Path $ConfigDir 'logs') -Filter '*.txt')
         if (!$Logs.Count) { throw 'OBS log missing.' }
@@ -111,7 +155,7 @@ try {
             throw "Saved product settings mismatch: $Phase"
         }
         Copy-Item -LiteralPath $ConfigDir -Destination (Join-Path $PhaseDir 'saved-config') -Recurse
-        Write-Output "OBS 33.0.1 normal installation verification passed: $Phase"
+        Write-Output "OBS 33.0.1 normal installation verification passed: $Stage"
     }
 } finally {
     if ($Process -and !$Process.HasExited) {
@@ -126,7 +170,8 @@ try {
         runtime_version = '33.0.1'
         runtime_archive_sha256 = $ActualHash
         package_sha256 = (Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash
-        product_sha256 = (Get-FileHash -LiteralPath $InstalledDll -Algorithm SHA256).Hash
+        old_package_sha256 = $OldPackageHash
+        product_sha256 = (Get-FileHash -LiteralPath $ProductDll -Algorithm SHA256).Hash
         product_installed_path = $InstalledDll
         config_directory = $ConfigDir
         probe_sha256 = (Get-FileHash -LiteralPath $ProbeDll -Algorithm SHA256).Hash
