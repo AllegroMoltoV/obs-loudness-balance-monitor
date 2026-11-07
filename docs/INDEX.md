@@ -41,3 +41,4 @@
 - [試用改善後の録音・試聴検証](reports/2026-11-06-preview-feedback-validation.md)
 
 - [2026-11-07 録音試聴の表示改善と既定出力の検証](reports/2026-11-07-preview-revision-validation.md)
+- [2026-11-07 OBS 33のWindows配置移行](reports/2026-11-07-obs33-install-layout.md)
