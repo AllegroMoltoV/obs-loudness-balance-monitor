@@ -17,6 +17,8 @@
 #include <QSizePolicy>
 #include <QPainter>
 #include <QMouseEvent>
+#include <QScreen>
+#include <QResizeEvent>
 
 #include <cmath>
 
@@ -57,6 +59,47 @@ private:
     QCheckBox *check_;
 };
 
+class PreviewNotice : public QLabel {
+public:
+    PreviewNotice()
+    {
+        setWordWrap(true);
+        setTextFormat(Qt::PlainText);
+        QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        policy.setHeightForWidth(true);
+        setSizePolicy(policy);
+    }
+    int heightForWidth(int width) const override
+    {
+        int height = QLabel::heightForWidth(width);
+        QFont measured_font = font();
+        measured_font.setBold(true);
+        const QFontMetrics metrics(measured_font);
+        for (const auto &text : {
+                 QString::fromUtf8(obs_module_text("PreviewIdle")) + "\n" + obs_module_text("PreviewSelectDevice"),
+                 QString::fromUtf8(obs_module_text("PreviewCountdown")).arg(3),
+                 QString::fromUtf8(obs_module_text("PreviewRecording")).arg(999.9, 0, 'f', 1),
+                 QString::fromUtf8(obs_module_text("PreviewWaiting")).arg(3),
+                 QString::fromUtf8(obs_module_text("PreviewReady")).arg(999.9, 0, 'f', 1),
+                 QString::fromUtf8(obs_module_text("PreviewPlaying")) + "\n" + obs_module_text("PreviewMonitorActive"),
+                 QString::fromUtf8(obs_module_text("PreviewPlaying")) + "\n" + obs_module_text("PreviewOverlapNotice")}) {
+            height = std::max(height, metrics.boundingRect(QRect(0, 0, std::max(1, width - 2 * margin() - 8), 10000),
+                Qt::TextWordWrap, text).height() + 2 * margin() + 8);
+        }
+        return height;
+    }
+};
+
+class GuideButton : public QPushButton {
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QPushButton::resizeEvent(event);
+        // QPushButton's themed size hint does not include its wrapped child label.
+        if (layout()) setMinimumHeight(layout()->totalHeightForWidth(event->size().width()));
+    }
+};
+
 void add_wrapped_checkbox(QVBoxLayout *layout, QCheckBox *check, const QString &text)
 {
     check->setAccessibleName(text);
@@ -64,6 +107,28 @@ void add_wrapped_checkbox(QVBoxLayout *layout, QCheckBox *check, const QString &
     row->addWidget(check, 0, Qt::AlignTop);
     row->addWidget(new CheckBoxLabel(check, text), 1);
     layout->addLayout(row);
+}
+
+void show_help(QWidget *parent, const QString &title, const QString &body, bool guide = false)
+{
+    auto *dialog = new QDialog(parent);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(title);
+    auto *outer = new QVBoxLayout(dialog);
+    auto *scroll = new QScrollArea(dialog);
+    scroll->setWidgetResizable(true);
+    auto *label = wrapped_label(body);
+    label->setTextFormat(Qt::RichText);
+    label->setMargin(12);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    scroll->setWidget(label);
+    outer->addWidget(scroll);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    outer->addWidget(buttons);
+    const QSize available = parent->screen()->availableGeometry().size() - QSize(40, 80);
+    dialog->resize(QSize(guide ? 680 : 480, guide ? 560 : 360).boundedTo(available));
+    dialog->show();
 }
 
 void add_section_help(QVBoxLayout *layout, QWidget *parent, const char *title_key, const QString &body)
@@ -75,25 +140,18 @@ void add_section_help(QVBoxLayout *layout, QWidget *parent, const char *title_ke
     help->setAccessibleName(QString::fromUtf8(obs_module_text("SectionHelp")).arg(title));
     help->setToolTip(help->accessibleName());
     help->setFocusPolicy(Qt::StrongFocus);
-    layout->addWidget(help, 0, Qt::AlignRight);
+    help->setFixedWidth(help->sizeHint().width());
+    auto *heading = wrapped_label(title);
+    heading->setObjectName(QString("heading_%1").arg(title_key));
+    auto font = heading->font();
+    font.setBold(true);
+    heading->setFont(font);
+    auto *row = new QHBoxLayout();
+    row->addWidget(heading, 1, Qt::AlignTop);
+    row->addWidget(help, 0, Qt::AlignTop);
+    layout->addLayout(row);
     QObject::connect(help, &QToolButton::clicked, parent, [parent, title, body] {
-        auto *dialog = new QDialog(parent);
-        dialog->setAttribute(Qt::WA_DeleteOnClose);
-        dialog->setWindowTitle(title);
-        auto *outer = new QVBoxLayout(dialog);
-        auto *scroll = new QScrollArea(dialog);
-        scroll->setWidgetResizable(true);
-        auto *label = wrapped_label(body);
-        label->setTextFormat(Qt::RichText);
-        label->setMargin(12);
-        label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        scroll->setWidget(label);
-        outer->addWidget(scroll);
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
-        QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
-        outer->addWidget(buttons);
-        dialog->resize(480, 360);
-        dialog->show();
+        show_help(parent, title, body);
     });
 }
 } // namespace
@@ -170,12 +228,53 @@ void LoudnessDock::setup_ui()
 	auto *main_layout = new QVBoxLayout(content_widget);
 	main_layout->setSpacing(8);
 	main_layout->setContentsMargins(8, 8, 8, 8);
+    auto *guide = new GuideButton();
+    guide->setObjectName("help_GuideTitle");
+    guide->setAccessibleName(obs_module_text("GuideTitle"));
+    QSizePolicy guide_policy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    guide_policy.setHeightForWidth(true);
+    guide->setSizePolicy(guide_policy);
+    // OBS themes cap ordinary buttons to one line; this guide supports wrapped titles.
+    guide->setStyleSheet("QPushButton { max-height: 16777215px; }");
+    QPixmap book(20, 20);
+    book.fill(Qt::transparent);
+    {
+        QPainter painter(&book);
+        painter.setPen(QPen(palette().color(QPalette::ButtonText), 1.5));
+        painter.drawRect(2, 3, 16, 14);
+        painter.drawLine(10, 3, 10, 17);
+        painter.drawLine(4, 6, 8, 6);
+        painter.drawLine(12, 6, 16, 6);
+    }
+    auto *guide_row = new QHBoxLayout(guide);
+    guide_row->setContentsMargins(10, 6, 10, 6);
+    auto *book_label = new QLabel();
+    book_label->setPixmap(book);
+    book_label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto *guide_label = wrapped_label(obs_module_text("GuideTitle"));
+    guide_label->setAlignment(Qt::AlignCenter);
+    guide_label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    guide_row->addWidget(book_label);
+    guide_row->addWidget(guide_label, 1);
+    connect(guide, &QPushButton::clicked, this, [this] {
+        show_help(this, obs_module_text("GuideTitle"), obs_module_text("GuideBody"), true);
+    });
+    main_layout->addWidget(guide);
 
 
-    auto *preview_group = new QGroupBox(obs_module_text("PreviewTitle"));
-    auto *preview_layout = new QVBoxLayout(preview_group);
-    add_section_help(preview_layout, preview_group, "PreviewTitle", obs_module_text("PreviewHelpDetail"));
-    preview_status_ = wrapped_label();
+    auto *preview_group = new QGroupBox();
+    preview_group->setObjectName("recordingMonitor");
+    auto *preview_outer = new QVBoxLayout(preview_group);
+    add_section_help(preview_outer, preview_group, "PreviewTitle", obs_module_text("PreviewHelpDetail"));
+    preview_columns_ = new QBoxLayout(QBoxLayout::TopToBottom);
+    preview_outer->addLayout(preview_columns_);
+    preview_controls_ = new QWidget();
+    preview_controls_->setObjectName("previewControls");
+    preview_controls_->setFocusPolicy(Qt::ClickFocus);
+    auto *preview_layout = new QVBoxLayout(preview_controls_);
+    preview_layout->setContentsMargins(0, 0, 0, 0);
+    preview_columns_->addWidget(preview_controls_, 1);
+    preview_status_ = new PreviewNotice();
     preview_status_->setObjectName("previewStatus");
     preview_status_->setMargin(6);
 
@@ -187,8 +286,6 @@ void LoudnessDock::setup_ui()
     preview_record_->setObjectName("previewRecord");
     preview_play_ = new QPushButton(obs_module_text("PreviewPlay"));
     preview_play_->setObjectName("previewPlay");
-    preview_layout->addWidget(preview_record_);
-    preview_layout->addWidget(preview_play_);
     preview_record_->setStyleSheet("QPushButton:enabled { border: 2px solid #d16969; padding: 6px; font-weight: bold; }");
     preview_play_->setStyleSheet("QPushButton:enabled { border: 2px solid #4c9ed9; padding: 6px; font-weight: bold; }");
 
@@ -249,7 +346,8 @@ void LoudnessDock::setup_ui()
     refresh_preview_devices();
 
 	// === Source Selection Group ===
-	auto *source_group = new QGroupBox(obs_module_text("SourceSelection"));
+	auto *source_group = new QGroupBox();
+    source_group->setObjectName("sourceSelection");
 	auto *source_layout = new QVBoxLayout(source_group);
 	add_section_help(source_layout, source_group, "SourceSelection", obs_module_text("HelpUsage"));
 
@@ -282,23 +380,21 @@ void LoudnessDock::setup_ui()
 
 
 
-    auto *status_group = new QGroupBox(obs_module_text("Status"));
+    auto *status_group = new QGroupBox();
+    status_group->setObjectName("liveMonitor");
     auto *status_outer = new QVBoxLayout(status_group);
-    const QString ratings_help = QString::fromUtf8(obs_module_text("HelpBalance")) + "<br><br>" +
-        obs_module_text("HelpMix") + "<br><br>" + obs_module_text("HelpClip");
-    add_section_help(status_outer, status_group, "Status", QString::fromUtf8(obs_module_text("HelpMeters")) +
-        "<br><br>" + ratings_help + "<br><br>" + obs_module_text("HelpUnits"));
+    add_section_help(status_outer, status_group, "Status", obs_module_text("HelpMeters"));
     live_monitor_ = add_monitor_widgets(status_outer, "live", false);
 
-    preview_layout->addWidget(preview_status_);
     preview_layout->addWidget(preview_recorded_track_);
+    preview_layout->addWidget(preview_status_);
+    preview_layout->addWidget(preview_record_);
+    preview_layout->addWidget(preview_play_);
     preview_analysis_group_ = new QWidget();
     auto *analysis_layout = new QVBoxLayout(preview_analysis_group_);
     analysis_layout->setContentsMargins(0, 0, 0, 0);
     auto *instant_group = new QGroupBox(obs_module_text("PreviewAnalysisRealtime"));
     auto *instant_layout = new QVBoxLayout(instant_group);
-    add_section_help(instant_layout, instant_group, "PreviewAnalysisRealtime",
-        QString::fromUtf8(obs_module_text("PreviewInstantHelp")) + "<br><br>" + ratings_help + "<br><br>" + obs_module_text("HelpUnits"));
     preview_instant_monitor_ = add_monitor_widgets(instant_layout, "previewRealtime", false);
     preview_realtime_ = wrapped_label();
     preview_realtime_->setObjectName("previewRealtime");
@@ -306,17 +402,15 @@ void LoudnessDock::setup_ui()
     analysis_layout->addWidget(instant_group);
     auto *whole_group = new QGroupBox(obs_module_text("PreviewAnalysisAverage"));
     auto *whole_layout = new QVBoxLayout(whole_group);
-    add_section_help(whole_layout, whole_group, "PreviewAnalysisAverage",
-        QString::fromUtf8(obs_module_text("PreviewWholeHelp")) + "<br><br>" + ratings_help + "<br><br>" + obs_module_text("HelpUnits"));
     preview_whole_monitor_ = add_monitor_widgets(whole_layout, "previewAverage", true);
     preview_average_ = wrapped_label();
     preview_average_->setObjectName("previewAverage");
     whole_layout->addWidget(preview_average_);
     analysis_layout->addWidget(whole_group);
-    preview_layout->addWidget(preview_analysis_group_);
+    preview_columns_->addWidget(preview_analysis_group_, 1);
 
 	// === Settings ===
-	auto *settings_group = new QGroupBox(obs_module_text("Settings"));
+	auto *settings_group = new QGroupBox();
 	auto *settings_layout = new QVBoxLayout(settings_group);
 	add_section_help(settings_layout, settings_group, "Settings", obs_module_text("HelpSettings"));
 
@@ -356,9 +450,12 @@ void LoudnessDock::setup_ui()
 
 
 
-    main_layout->addWidget(status_group);
+    top_sections_ = new QBoxLayout(QBoxLayout::TopToBottom);
+    top_sections_->setContentsMargins(preview_outer->contentsMargins());
+    top_sections_->addWidget(source_group, 1);
+    top_sections_->addWidget(status_group, 1);
+    main_layout->addLayout(top_sections_);
     main_layout->addWidget(preview_group);
-    main_layout->addWidget(source_group);
     main_layout->addWidget(settings_group);
     main_layout->addStretch();
 
@@ -393,6 +490,28 @@ void LoudnessDock::interrupt_preview()
     preview_->cancel();
 }
 
+void LoudnessDock::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    update_responsive_layout();
+}
+
+void LoudnessDock::update_responsive_layout()
+{
+    if (!top_sections_ || !preview_columns_) return;
+    // Fit three numeric pairs in each monitor column, including localized font scaling.
+    const int metric_width = fontMetrics().horizontalAdvance("-99.9 LUFS  -99.9 dB") + 20;
+    const int breakpoint = 2 * (3 * metric_width + 40) + 40;
+    const bool wide = width() >= breakpoint;
+    setProperty("wideLayout", wide);
+    top_sections_->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    preview_columns_->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    preview_columns_->setAlignment(preview_controls_, Qt::AlignTop);
+    for (auto *monitor : {&live_monitor_, &preview_instant_monitor_, &preview_whole_monitor_})
+        if (monitor->metrics)
+            monitor->metrics->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+}
+
 void LoudnessDock::refresh_preview_devices()
 {
     const QString selected = preview_device_->currentData().toString();
@@ -415,7 +534,6 @@ void LoudnessDock::update_preview()
     using State = PreviewSession::State;
     const auto state = preview_->state();
     const bool has_recording = preview_->recorded_frames() != 0;
-    preview_analysis_group_->setVisible(has_recording);
     if (has_recording) {
         const auto *point = preview_->analysis_point();
         show_monitor_values(preview_instant_monitor_,
@@ -436,6 +554,16 @@ void LoudnessDock::update_preview()
         preview_realtime_->setVisible(!preview_realtime_->text().isEmpty());
         preview_average_->setText(preview_->analysis_notice());
         preview_average_->setVisible(!preview_average_->text().isEmpty());
+    } else {
+        for (const auto *monitor : {&preview_instant_monitor_, &preview_whole_monitor_}) {
+            show_monitor_values(*monitor, {-HUGE_VAL, -HUGE_VAL, -HUGE_VAL},
+                {-HUGE_VAL, -HUGE_VAL, -HUGE_VAL}, -HUGE_VAL, false);
+            for (auto *rating : monitor->ratings) show_monitor_rating(rating, std::nullopt);
+        }
+        preview_realtime_->clear();
+        preview_average_->clear();
+        preview_realtime_->hide();
+        preview_average_->hide();
     }
     if (state == State::playing) preview_has_played_ = true;
     const bool busy = state == State::preparing || state == State::recording ||
@@ -444,19 +572,23 @@ void LoudnessDock::update_preview()
     const bool manual = preview_manual_track_->isChecked();
     const auto choice = busy ? PreviewTrackChoice{int(preview_->track()), {}}
         : manual ? PreviewTrackChoice{preview_track_->currentData().toInt(), {}} : resolve_preview_track();
+    // Disabling the focused button otherwise makes QScrollArea scroll to the next control.
+    if (busy && preview_controls_->isAncestorOf(focusWidget()) &&
+        focusWidget() != preview_play_ &&
+        !(state == State::recording && focusWidget() == preview_record_))
+        preview_controls_->setFocus(Qt::OtherFocusReason);
     preview_manual_track_->setEnabled(!busy);
     preview_track_->setEnabled(!busy && manual);
     preview_track_->setVisible(manual);
     preview_device_->setEnabled(!busy);
     preview_refresh_->setEnabled(!busy);
     preview_monitor_->setEnabled(!busy);
-    preview_track_info_->setVisible(!busy && !manual);
+    preview_track_info_->setVisible(!manual);
     preview_track_info_->setText(choice.track >= 0 ? QString::fromUtf8(obs_module_text("PreviewAutoTrack")) : choice.error);
     const bool valid_start = choice.track >= 0 && !preview_device_->currentData().toString().isEmpty();
     preview_record_->setEnabled(!blocked && state != State::preparing && state != State::waiting && state != State::playing &&
                                (state == State::recording || valid_start));
-    preview_play_->setVisible(state == State::waiting || state == State::playing || state == State::ready);
-    preview_play_->setEnabled(!blocked);
+    preview_play_->setEnabled(!blocked && (state == State::waiting || state == State::playing || state == State::ready));
     preview_record_->setText(state == State::preparing ?
         QString::fromUtf8(obs_module_text("PreviewRecordCountdown")).arg(preview_->countdown()) :
         QString::fromUtf8(obs_module_text(state == State::recording ? "PreviewFinish" : state == State::ready ? "PreviewRerecord" : "PreviewRecord")));
@@ -477,8 +609,8 @@ void LoudnessDock::update_preview()
         ? style()->standardIcon(QStyle::SP_MediaStop) : record_icon);
     preview_play_->setIcon(style()->standardIcon(state == State::playing || state == State::waiting ? QStyle::SP_MediaStop : QStyle::SP_MediaPlay));
     const bool recorded = busy || state == State::ready;
-    preview_recorded_track_->setVisible(recorded);
-    preview_recorded_track_->setText(recorded ? QString::fromUtf8(obs_module_text("PreviewRecordedTrack")).arg(preview_->track() + 1) : QString());
+    preview_recorded_track_->setVisible(true);
+    preview_recorded_track_->setText(recorded ? QString::fromUtf8(obs_module_text("PreviewRecordedTrack")).arg(preview_->track() + 1) : QString(" "));
     QString message;
     if (blocked) message = obs_module_text("PreviewOutputActive");
     else if (!preview_->message().isEmpty()) message = preview_->message();
@@ -671,8 +803,12 @@ LoudnessDock::MonitorWidgets LoudnessDock::add_monitor_widgets(QVBoxLayout *layo
         columns->addWidget(peak_title, 1);
         layout->addLayout(columns);
     }
+    widgets.metrics = new QBoxLayout(QBoxLayout::TopToBottom);
+    layout->addLayout(widgets.metrics);
     for (size_t i = 0; i < metric_keys.size(); ++i) {
-        layout->addWidget(wrapped_label(obs_module_text(metric_keys[i])));
+        auto *metric = new QVBoxLayout();
+        widgets.metrics->addLayout(metric, 1);
+        metric->addWidget(wrapped_label(obs_module_text(metric_keys[i])));
         widgets.meters[i] = new QProgressBar();
         widgets.meters[i]->setObjectName(prefix + metric_names[i] + "Meter");
         widgets.meters[i]->setRange(0, 100);
@@ -680,7 +816,7 @@ LoudnessDock::MonitorWidgets LoudnessDock::add_monitor_widgets(QVBoxLayout *layo
         widgets.meters[i]->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
         widgets.meters[i]->setTextVisible(false);
         widgets.meters[i]->setFixedHeight(16);
-        layout->addWidget(widgets.meters[i]);
+        metric->addWidget(widgets.meters[i]);
         auto *numbers = new QHBoxLayout();
         widgets.lufs[i] = wrapped_label("-- LUFS");
         widgets.lufs[i]->setObjectName(prefix + metric_names[i] + "Lufs");
@@ -689,7 +825,7 @@ LoudnessDock::MonitorWidgets LoudnessDock::add_monitor_widgets(QVBoxLayout *layo
         widgets.peaks[i]->setAlignment(Qt::AlignRight);
         numbers->addWidget(widgets.lufs[i], 1);
         numbers->addWidget(widgets.peaks[i], 1);
-        layout->addLayout(numbers);
+        metric->addLayout(numbers);
     }
     layout->addWidget(wrapped_label(obs_module_text(whole_recording ? "PreviewAverageDelta" : "Delta")));
     widgets.delta = wrapped_label("-- LU");

@@ -4,6 +4,10 @@
 
 調査結果と検証結果を保存します。
 
+- [2026-11-07 モニタの広狭配置とヘルプの検証](reports/2026-11-07-responsive-monitor.md)
+
+- [2026-11-07 録音開始時の自動スクロール](reports/2026-11-07-record-start-scroll.md)
+
 - [2026-11-07 モニタ表示の統合と録音解析の検証](reports/2026-11-07-unified-monitor-validation.md)
 
 - [2026-09-19 初期調査](reports/2026-09-19-bootstrap.md)

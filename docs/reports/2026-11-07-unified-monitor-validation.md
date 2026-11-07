@@ -33,4 +33,6 @@
 
 基準worktreeの`.logs/2026110733`〜`2026110748`と`.deps/preview-unified-*`にビルド、解析、実音声と画面の証拠を保存した。最終候補の表示とヘルプの証拠は`.deps/preview-layout-final-*`に保存した。最終候補でも独立数値照合と音声照合が成功した。
 
-3OS CI、通常環境への退避付き導入、依頼者の再試用を残している。OS既定出力、停止時復元、保存設定の検証には、処理を変更していない既存の成功証拠を再利用する。ユーザーテストが完了するまで公開しない。
+候補`fcd8897`の[CI 42342345767](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/actions/runs/42342345767)はWindows・macOS・Ubuntuで成功した。Windows配布ZIPのSHA256は`2E9F6122F4D9E941FA20DC6C93A8752789295A03CA873F64A91A67512AF24E0A`、DLLは`6A30FE71A6D6112E3AD6722CBA9B22EF38EA599CC38CC5E9AD3CB953A12DF825`。CIのロード証拠と一致する配布物を通常環境へ導入した。旧プラグインと設定の退避先はrootの`.appendix/20261107-unified-monitor-trial`。設定のハッシュは導入前後で一致した。
+
+通常OBSの起動と依頼者の再試用を実施し、広狭配置とヘルプの改善要望を受領した。後続の変更と検証は[モニタの広狭配置とヘルプの検証](2026-11-07-responsive-monitor.md)へ記録する。OS既定出力、停止時復元、保存設定の検証には、処理を変更していない既存の成功証拠を再利用する。ユーザーテストが完了するまで公開しない。

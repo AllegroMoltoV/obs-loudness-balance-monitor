@@ -44,6 +44,11 @@ private slots:
 	void on_refresh_sources();
 
 private:
+	void resizeEvent(QResizeEvent *event) override;
+	void update_responsive_layout();
+	QBoxLayout *top_sections_{nullptr};
+	QBoxLayout *preview_columns_{nullptr};
+	QWidget *preview_controls_{nullptr};
 	void setup_ui();
 	void update_preview();
 	void refresh_preview_devices();
@@ -73,6 +78,7 @@ private:
         std::array<QLabel *, 3> peaks{};
         QLabel *vad{nullptr};
         QLabel *delta{nullptr};
+        QBoxLayout *metrics{nullptr};
     };
     MonitorWidgets add_monitor_widgets(QVBoxLayout *layout, const QString &prefix, bool whole_recording);
     void show_monitor_values(const MonitorWidgets &widgets, const std::array<double, 3> &lufs,

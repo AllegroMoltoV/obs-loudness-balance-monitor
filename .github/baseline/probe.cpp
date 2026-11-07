@@ -429,8 +429,8 @@ static void preview_test()
                 return;
             }
             observations.insert("device_selection_ready_seconds", elapsed(run->started));
-            record->click();
-            if (!preview_check(!record->isEnabled() && record->text() == product_text("PreviewRecordCountdown").arg(3) && !play->isVisible(),
+            if (!preview_check(focused_record_click(record, "record_start_position"), "record start moved the operation position")) return;
+            if (!preview_check(!record->isEnabled() && record->text() == product_text("PreviewRecordCountdown").arg(3) && !play->isEnabled(),
                                "preparation controls did not update")) return;
             if (!preview_check(capture_preview_layout("preview-preparing"), "layout evidence save failed")) return;
             run->started = now;
@@ -457,7 +457,7 @@ static void preview_test()
                 }
                 if (!automatic && elapsed(run->since) >= (test_case == "analysis-numeric" ? 12.0 : sequence && evidence_clip == 2 ? 2.0 : test_case == "analysis" || sequence ? 6.0 : 2.0)) record->click();
             }
-            if (play->text() != product_text("PreviewStopWaiting") || !play->isVisible()) return;
+            if (play->text() != product_text("PreviewStopWaiting") || !play->isEnabled()) return;
             if (!preview_check(run->seen_recording && !record->isEnabled(), "waiting reached without recording")) return;
             if (!select_expected_pcm()) return;
             if (recovery) {
@@ -609,7 +609,8 @@ static void preview_test()
                 if (!preview_check(capture_preview_layout("preview-analysis"), "analysis layout capture failed")) return;
             }
             if (test_case == "recording-interrupt" || test_case == "waiting-interrupt") return;
-            if (test_case == "playback-stop" && !observations.value("preview_manual_stop_restored").toBool() && elapsed(run->since) >= 0.3) {
+            if ((test_case == "playback-stop" || (sequence && qEnvironmentVariable("LBM_PREVIEW_LAYOUT") == "1")) &&
+                !observations.value("preview_manual_stop_restored").toBool() && elapsed(run->since) >= 0.3) {
                 if (!preview_check(play->text() == product_text("PreviewStop"), "playback ended before manual stop")) return;
                 play->click();
                 if (!preview_check(play->text() == product_text("PreviewReplay") && obs_source_get_monitoring_enabled(voice) &&
@@ -651,6 +652,8 @@ static void preview_test()
                                    "required failure and retry observations missing")) return;
                 obs_source_set_monitoring_enabled(voice, false);
                 obs_source_set_audio_mixers(voice, 0); obs_source_set_audio_mixers(bgm, 0);
+                if (qEnvironmentVariable("LBM_PREVIEW_LAYOUT") == "1" &&
+                    !preview_check(check_responsive_layout(), "responsive layout or preserved state verification failed")) return;
                 if (qEnvironmentVariable("LBM_PREVIEW_HELP") == "1" &&
                     !preview_check(check_preview_help_keyboard(), "section help keyboard verification failed")) return;
                 if (test_case == "analysis" &&
@@ -721,8 +724,8 @@ static void preview_test()
             obs_source_set_monitoring_enabled(voice, false);
             origin = os_gettime_ns() - position * 1000000000ULL / evidence_rate;
             producer->start(10);
-            record->click();
-            if (!preview_check(!record->isEnabled() && record->text() == product_text("PreviewRecordCountdown").arg(3) && !play->isVisible(),
+            if (!preview_check(focused_record_click(record, "rerecord_start_position"), "rerecord moved the operation position")) return;
+            if (!preview_check(!record->isEnabled() && record->text() == product_text("PreviewRecordCountdown").arg(3) && !play->isEnabled(),
                                "rerecord did not discard previous clip")) return;
             run->seen_recording = false; run->seen_waiting_again = false; run->stage = 0;
         }
@@ -751,10 +754,11 @@ static void inspect_meter()
         device->setCurrentIndex(index);
         prepare_profile_track_test(preview_test); return;
     }
-    if (qEnvironmentVariable("LBM_PREVIEW_LAYOUT") == "1") dock_container->setFixedWidth(232);
+    if (qEnvironmentVariable("LBM_PREVIEW_LAYOUT") == "1") dock_container->setFixedWidth(qEnvironmentVariableIntValue("LBM_PREVIEW_WIDTH") > 0 ? qEnvironmentVariableIntValue("LBM_PREVIEW_WIDTH") : 232);
     if (!qEnvironmentVariable("LBM_PREVIEW_DEVICE").isEmpty()) { preview_test(); return; }
     if (qEnvironmentVariable("LBM_PREVIEW_HELP") == "1") {
-        if (!preview_check(capture_preview_layout("monitor-layout"), "layout evidence save failed") ||
+        if (!preview_check(check_responsive_layout(), "responsive layout or preserved state verification failed") ||
+            !preview_check(capture_preview_layout("monitor-layout"), "layout evidence save failed") ||
             !preview_check(check_preview_help_keyboard(), "section help keyboard verification failed")) return;
     }
     finish(true, "settings and visibility checked; voice/BGM meters responded");
@@ -897,7 +901,7 @@ static void event(obs_frontend_event e, void *)
             auto *play = dock->findChild<QPushButton *>("previewPlay");
             const bool restored = obs_source_get_monitoring_enabled(voice);
             observations.insert("monitor_restored_at_recording_started", restored);
-            if (!preview_check(!play->isVisible() && restored,
+            if (!preview_check(!play->isEnabled() && restored,
                                "recording start failed to stop preview and restore monitor")) return;
             observations.insert("preview_recording_start_interrupt", true);
             // The product refreshes output-dependent controls on its 100 ms UI timer.
@@ -905,7 +909,7 @@ static void event(obs_frontend_event e, void *)
                 if (finished) return;
                 auto *record = dock->findChild<QPushButton *>("previewRecord");
                 auto *play = dock->findChild<QPushButton *>("previewPlay");
-                if (!preview_check(obs_frontend_recording_active() && !record->isEnabled() && !play->isVisible(),
+                if (!preview_check(obs_frontend_recording_active() && !record->isEnabled() && !play->isEnabled(),
                                    "recording controls did not become blocked")) return;
                 observations.insert("recording_controls_blocked", true);
                 obs_frontend_recording_stop();
@@ -916,7 +920,7 @@ static void event(obs_frontend_event e, void *)
                 if (finished) return;
                 auto *record = dock->findChild<QPushButton *>("previewRecord");
                 auto *play = dock->findChild<QPushButton *>("previewPlay");
-                if (!preview_check(record->isEnabled() && !play->isVisible(), "interrupted recording retained preview clip")) return;
+                if (!preview_check(record->isEnabled() && !play->isEnabled(), "interrupted recording retained preview clip")) return;
                 if (!save_loopback("recording-interrupted")) return;
                 obs_source_set_monitoring_enabled(voice, false);
                 obs_source_set_audio_mixers(voice, 0);

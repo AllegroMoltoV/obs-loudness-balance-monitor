@@ -14,9 +14,11 @@
 // re-enter the audio scenario's timer while its state transition is in progress.
 static void activate_preview_layout(QWidget *widget)
 {
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
     if (widget->layout()) widget->layout()->activate();
     for (auto *child : widget->findChildren<QWidget *>())
         if (child->layout()) child->layout()->activate();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
 }
 
 static QJsonObject preview_widget_geometry(QWidget *widget)
@@ -69,6 +71,83 @@ static void send_preview_key(QWidget *target, int key)
     QApplication::sendEvent(target, &release);
 }
 
+static bool check_responsive_layout()
+{
+    const int original_width = dock_container->width();
+    const int metric_width = dock->fontMetrics().horizontalAdvance("-99.9 LUFS  -99.9 dB") + 20;
+    const int boundary = 2 * (3 * metric_width + 40) + 40;
+    QJsonArray results;
+    bool passed = true;
+    QMap<QString, QString> values;
+    for (auto *label : dock->findChildren<QLabel *>())
+        if (label->objectName().startsWith("previewRealtime") || label->objectName().startsWith("previewAverage"))
+            values.insert(label->objectName(), label->text());
+    QList<QPair<QComboBox *, int>> selections;
+    for (auto *combo : dock->findChildren<QComboBox *>()) selections.append({combo, combo->currentIndex()});
+    for (int width : {232, boundary - 1, boundary, boundary + 1, 1400, 232}) {
+        dock_container->setFixedWidth(width);
+        activate_preview_layout(dock_container);
+        const bool wide = dock->property("wideLayout").toBool();
+        QJsonObject result{{"requested_width", width}, {"actual_width", dock->width()}, {"wide", wide}};
+        bool okay = true;
+        auto *outer_scroll = dock->findChild<QScrollArea *>(QString(), Qt::FindDirectChildrenOnly);
+        okay = outer_scroll->widget()->width() <= outer_scroll->viewport()->width();
+        for (const char *section : {"SourceSelection", "Status", "PreviewTitle", "Settings"}) {
+            auto *heading = dock->findChild<QLabel *>(QString("heading_%1").arg(section));
+            auto *help = dock->findChild<QToolButton *>(QString("help_%1").arg(section));
+            okay = okay && heading && help && heading->mapTo(dock, QPoint()).y() == help->mapTo(dock, QPoint()).y()
+                && heading->mapTo(dock, QPoint()).x() + heading->width() <= help->mapTo(dock, QPoint()).x();
+        }
+        for (auto it = values.cbegin(); it != values.cend(); ++it)
+            okay = okay && dock->findChild<QLabel *>(it.key())->text() == it.value();
+        for (const auto &selection : selections) okay = okay && selection.first->currentIndex() == selection.second;
+        result.insert("headers_and_state_preserved", okay);
+        result.insert("content_width", outer_scroll->widget()->width());
+        result.insert("viewport_width", outer_scroll->viewport()->width());
+        result.insert("saved", capture_preview_layout(QString("responsive-%1").arg(width)));
+        results.append(result);
+        passed = passed && okay;
+    }
+    dock_container->setFixedWidth(original_width);
+    activate_preview_layout(dock_container);
+    observations.insert("responsive_layout", results);
+    return passed;
+}
+
+static QJsonObject record_position(QPushButton *record)
+{
+    auto *scroll = dock->findChild<QScrollArea *>(QString(), Qt::FindDirectChildrenOnly);
+    QJsonObject result{{"scroll_y", scroll->verticalScrollBar()->value()},
+            {"button_y", record->mapTo(scroll->viewport(), QPoint()).y()},
+            {"content_height", scroll->widget()->height()}};
+    for (const char *name : {"previewStatus", "previewRecordedTrack", "previewTrackInfo"}) {
+        auto *label = dock->findChild<QLabel *>(name);
+        result.insert(name, QJsonObject{{"height", label->height()}, {"y", label->mapTo(scroll->widget(), QPoint()).y()}});
+    }
+    return result;
+}
+
+static bool focused_record_click(QPushButton *record, const QString &name)
+{
+    if (qEnvironmentVariable("LBM_PREVIEW_LAYOUT") != "1") {
+        record->click();
+        return true;
+    }
+    auto *scroll = dock->findChild<QScrollArea *>(QString(), Qt::FindDirectChildrenOnly);
+    scroll->ensureWidgetVisible(record);
+    record->setFocus(Qt::MouseFocusReason);
+    activate_preview_layout(dock_container);
+    const auto before = record_position(record);
+    record->click();
+    activate_preview_layout(dock_container);
+    const auto after = record_position(record);
+    observations.insert(name, QJsonObject{{"before", before}, {"after", after}});
+    // Check the original scroll regression and the action's visibility; retain exact geometry as evidence.
+    const int y = after.value("button_y").toInt();
+    return before.value("scroll_y") == after.value("scroll_y") &&
+        y >= 0 && y + record->height() <= scroll->viewport()->height();
+}
+
 static bool check_preview_help_keyboard()
 {
     if (!dock || !dock_container) return false;
@@ -78,9 +157,9 @@ static bool check_preview_help_keyboard()
     QPointer<QWidget> original_focus = QApplication::focusWidget();
     QJsonArray results;
     bool passed = true;
-    for (const char *section : {"PreviewTitle", "SourceSelection", "Status", "PreviewAnalysisRealtime", "PreviewAnalysisAverage", "Settings"}) {
+    for (const char *section : {"GuideTitle", "SourceSelection", "Status", "PreviewTitle", "Settings"}) {
         const QString object_name = QString("help_%1").arg(section);
-        auto *help = dock->findChild<QToolButton *>(object_name);
+        auto *help = dock->findChild<QAbstractButton *>(object_name);
         QJsonObject result{{"button", object_name}};
         bool okay = help && help->isEnabled();
         QPointer<QDialog> dialog;
