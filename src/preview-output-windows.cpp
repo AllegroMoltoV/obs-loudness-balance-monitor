@@ -54,7 +54,11 @@ bool play_preview_on_device(const std::vector<float>& input,uint32_t input_rate,
  if(position)position->store(-1.0);
  Com com;
  Resources r;hrcheck(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,__uuidof(IMMDeviceEnumerator),reinterpret_cast<void**>(&r.enumerator)),"CoCreateInstance");
- std::wstring wide(id.begin(),id.end());hrcheck(r.enumerator->GetDevice(wide.c_str(),&r.device),"GetDevice");
+ if(id=="default"){
+  hrcheck(r.enumerator->GetDefaultAudioEndpoint(eRender,eMultimedia,&r.device),"GetDefaultAudioEndpoint");
+ }else{
+  std::wstring wide(id.begin(),id.end());hrcheck(r.enumerator->GetDevice(wide.c_str(),&r.device),"GetDevice");
+ }
  hrcheck(r.device->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,reinterpret_cast<void**>(&r.client)),"Activate");
  hrcheck(r.client->GetMixFormat(&r.format),"GetMixFormat");
  const auto&f=*r.format;bool floating=f.wFormatTag==WAVE_FORMAT_IEEE_FLOAT;

@@ -113,12 +113,12 @@ void PreviewAnalysis::observe()
 	PreviewAnalysisPoint point;
 	point.frame_position = processed_frames_;
 	point.voice_active = vad_.is_active();
-	if (processed_frames_ >= static_cast<uint64_t>(sample_rate_) * 3) {
+	if (processed_frames_ >= (static_cast<uint64_t>(sample_rate_) * 2 + 4) / 5) {
 		double voice = -HUGE_VAL;
 		double bgm = -HUGE_VAL;
-		if (ebur128_loudness_shortterm(voice_state_.get(), &voice) == EBUR128_SUCCESS && std::isfinite(voice))
+		if (ebur128_loudness_momentary(voice_state_.get(), &voice) == EBUR128_SUCCESS && std::isfinite(voice))
 			point.voice_lufs = voice;
-		if (ebur128_loudness_shortterm(bgm_state_.get(), &bgm) == EBUR128_SUCCESS && std::isfinite(bgm))
+		if (ebur128_loudness_momentary(bgm_state_.get(), &bgm) == EBUR128_SUCCESS && std::isfinite(bgm))
 			point.bgm_lufs = bgm;
 	}
 	if (point.voice_active && std::isfinite(point.voice_lufs) && std::isfinite(point.bgm_lufs)) {
@@ -133,9 +133,17 @@ void PreviewAnalysis::observe()
 			dynamic_status_ = Status::WARN;
 		}
 		point.balance_status = dynamic_status_;
-		voice_sum_ += point.voice_lufs;
-		bgm_sum_ += point.bgm_lufs;
-		++valid_points_;
+
+	}
+	if (point.voice_active && processed_frames_ >= static_cast<uint64_t>(sample_rate_) * 3) {
+		double voice = -HUGE_VAL, bgm = -HUGE_VAL;
+		if (ebur128_loudness_shortterm(voice_state_.get(), &voice) == EBUR128_SUCCESS &&
+		    ebur128_loudness_shortterm(bgm_state_.get(), &bgm) == EBUR128_SUCCESS &&
+		    std::isfinite(voice) && std::isfinite(bgm)) {
+			voice_sum_ += voice;
+			bgm_sum_ += bgm;
+			++valid_points_;
+		}
 	}
 	series_.push_back(point);
 }

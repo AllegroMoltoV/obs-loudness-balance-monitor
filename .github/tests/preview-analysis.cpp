@@ -59,16 +59,36 @@ int main()
 		}
 
 		lbm::PreviewAnalysis analysis;
-		require(analysis.reset(kRate, -40.0, 6.0, 0.5), "reset failed");
-		feed(analysis, voice, bgm, kRate * 3 - 1, 997);
-		require_unrated(analysis);
-		for (const auto &point : analysis.series())
-			require(!std::isfinite(point.voice_lufs) && !std::isfinite(point.bgm_lufs), "short recording has LUFS");
+		for (const uint32_t rate : {44100u, 48000u}) {
+			const uint32_t boundary = rate * 2 / 5;
+			require(analysis.reset(rate, -40.0, 6.0, 0.5), "reset failed");
+			feed(analysis, voice, bgm, boundary - 1, 997);
+			require_unrated(analysis);
+			for (const auto &point : analysis.series())
+				require(!std::isfinite(point.voice_lufs) && !std::isfinite(point.bgm_lufs), "incomplete window has LUFS");
+			require(analysis.append(voice.data() + (boundary - 1) * 2, bgm.data() + (boundary - 1) * 2, 1),
+				"boundary append failed");
+			require(std::isfinite(analysis.series().back().voice_lufs) && analysis.series().back().balance_status.has_value(), "400 ms window did not produce a dynamic value");
+			require(analysis.summary().valid_points == 0, "short recording produced a 3 second average");
+			require(analysis.series().back().frame_position == boundary, "first value has wrong recording position");
+			const uint32_t average_boundary = rate * 3;
+			require(analysis.append(voice.data() + boundary * 2, bgm.data() + boundary * 2,
+				average_boundary - boundary - 1), "pre-average append failed");
+			require(analysis.summary().valid_points == 0, "incomplete Short-term window entered average");
+			require(analysis.append(voice.data() + (average_boundary - 1) * 2,
+				bgm.data() + (average_boundary - 1) * 2, 1), "average boundary append failed");
+			require(analysis.summary().valid_points == 1, "3 second window did not produce first average point");
+		}
 
 		require(analysis.reset(kRate, -40.0, 6.0, 0.5), "silence reset failed");
 		feed(analysis, silence, silence, kFrames, 997);
 		require_unrated(analysis);
 
+		for (bool silent_voice : {false, true}) {
+			require(analysis.reset(kRate, -40.0, 6.0, 0.5), "unpaired reset failed");
+			feed(analysis, silent_voice ? silence : voice, silent_voice ? bgm : silence, kFrames, 997);
+			require_unrated(analysis);
+		}
 		const double expected_delta = 20.0 * std::log10(2.0);
 		const lbm::Status colors[] = {lbm::Status::OK, lbm::Status::WARN, lbm::Status::BAD};
 		for (int category = 0; category < 3; ++category) {
@@ -78,19 +98,15 @@ int main()
 			require(summary.valid_points == 31, "unexpected valid sample interval");
 			require(summary.balance_status == colors[category], "wrong fixed basic rating");
 			require(close(summary.voice_lufs - summary.bgm_lufs, expected_delta), "wrong mean LUFS difference");
-			double voice_sum = 0.0;
-			double bgm_sum = 0.0;
+
 			for (const auto &point : analysis.series()) {
 				if (!point.balance_status)
 					continue;
 				require(point.voice_active, "opposite channels lost VAD activity");
 				require(point.balance_status == colors[category], "wrong initial or sustained dynamic rating");
 				require(close(point.voice_lufs - point.bgm_lufs, expected_delta), "wrong instantaneous LUFS difference");
-				voice_sum += point.voice_lufs;
-				bgm_sum += point.bgm_lufs;
+
 			}
-			require(close(summary.voice_lufs, voice_sum / summary.valid_points) &&
-					close(summary.bgm_lufs, bgm_sum / summary.valid_points), "mean is not the paired LUFS arithmetic mean");
 		}
 
 		lbm::PreviewAnalysis split;

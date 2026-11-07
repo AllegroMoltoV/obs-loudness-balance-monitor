@@ -118,6 +118,12 @@ Linuxでは修正版の製品・検証モジュールのビルドと解析単体
 
 このWindows候補のDLL SHA256はC38396EDA2E2D68550575646330B4FA557096110DEA7C6AE9B64C9BC56592595。macOS実行検証を既存3OS CIへ追加した。現runnerのCoreAudio出力在庫を調べ、Apple Virtual Sound DeviceのUIDを一意選択し、現製品のAudioQueue処理で44.1/48kHzの通常再生・取消と位置更新を確認する。物理デバイスの証拠とは区別する。診断用実行器を配布pkgへ含めない。
 
-未完了はこの候補の3OS CI・macOS位置実行と利用者再試用。追加解析版の通常OBS導入と公開は未実施。
+## 候補CIと通常環境への導入
+
+候補d00bcc42e3d16c445a6b1069fafdec69193615d8の[CI42224723250](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/actions/runs/42224723250)はWindows・macOS・Ubuntuで全成功した。macOSは現runnerのApple Virtual Sound Device (UID AVIODevice 2)で44.1/48kHzの通常再生・取消・位置更新が全成功した。これは仮想デバイスによるOS音声API実行の証拠で、物理出力波形との一致保証ではない。
+
+Windows CIの通常配布ZIPからDLLとlocaleを通常環境へ導入し、DLL SHA256 7EE597B9208721112E08ADDB1BE33394F2C25E28D832C421F024F0F9B1A7500Aを照合した。ローカルE2E候補と同じソースコミットのCIビルドである。CIではOBS33.0.1への導入・設定とドック表示復元・メーター動作も成功している。既存設定を保持した。
+
+更新直前のプラグインと設定は.appendix/20261106-preview-analysis-trialへ退避し、manifest.json・trial-guide.md・restore.mdを用意した。通常OBSの起動はWindowsの許可画面で待機中。通常環境での新DLLロード・画面確認と利用者再試用は未完了であり、過去の起動ログを今回の成功証拠として使わない。公開は未実施。
 
 

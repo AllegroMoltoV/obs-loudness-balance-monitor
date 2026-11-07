@@ -55,6 +55,23 @@ static AudioDeviceID find_device(CFStringRef wanted)
         if (device_matches(id, wanted)) return id;
     return kAudioObjectUnknown;
 }
+static CFStringRef default_output_uid()
+{
+    AudioObjectPropertyAddress addr{kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+    AudioDeviceID id = kAudioObjectUnknown;
+    UInt32 bytes = sizeof(id);
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &bytes, &id) != noErr || id == kAudioObjectUnknown)
+        throw std::runtime_error("Default output device unavailable");
+    addr.mSelector = kAudioDevicePropertyDeviceUID;
+    CFStringRef uid = nullptr;
+    bytes = sizeof(uid);
+    const OSStatus status = AudioObjectGetPropertyData(id, &addr, 0, nullptr, &bytes, &uid);
+    if (status != noErr || !uid || CFStringGetLength(uid) == 0) {
+        if (uid) CFRelease(uid);
+        throw std::runtime_error("Default output device UID unavailable");
+    }
+    return uid;
+}
 static void refill(void* data, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {
     auto& state = *static_cast<Queue*>(data);
@@ -71,7 +88,7 @@ static void refill(void* data, AudioQueueRef queue, AudioQueueBufferRef buffer)
 bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& device, const std::atomic<bool>& cancel, std::string& error, std::atomic<double>* position)
 {
     if (position) position->store(-1.0);
-    CFStringRef uid = CFStringCreateWithCString(nullptr, device.c_str(), kCFStringEncodingUTF8);
+    CFStringRef uid = device == "default" ? default_output_uid() : CFStringCreateWithCString(nullptr, device.c_str(), kCFStringEncodingUTF8);
     if (!uid) throw std::runtime_error("Invalid output device UID");
     const AudioDeviceID id = find_device(uid);
     if (id == kAudioObjectUnknown) { CFRelease(uid); throw std::runtime_error("Output device unavailable"); }

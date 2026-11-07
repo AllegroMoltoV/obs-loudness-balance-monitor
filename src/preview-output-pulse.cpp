@@ -5,6 +5,7 @@
 #include <chrono>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <cstring>
 namespace lbm {
 namespace {
@@ -32,6 +33,18 @@ struct Pulse {
     }
 };
 struct Completion { bool called = false; bool success = false; };
+struct DefaultSink { bool called = false; std::string name; };
+static void server_info(pa_context*, const pa_server_info* info, void* value) {
+    auto& sink = *static_cast<DefaultSink*>(value);
+    // The server owns info; retain the concrete name for this playback only.
+    try {
+        if (info && info->default_sink_name) sink.name = info->default_sink_name;
+    } catch (...) {
+        // Do not unwind through the PulseAudio C callback; report lookup failure.
+        sink.name.clear();
+    }
+    sink.called = true;
+}
 static void completed(pa_stream*, int success, void* value) {
     auto& c = *static_cast<Completion*>(value);
     c.success = success != 0;
@@ -50,7 +63,7 @@ static bool operation(Pulse& p, pa_operation* op, Completion& done, const std::a
     return ok;
 }
 } // namespace
-bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& device, const std::atomic<bool>& cancel, std::string& error, std::atomic<double>* position)
+bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const std::string& requested_device, const std::atomic<bool>& cancel, std::string& error, std::atomic<double>* position)
 {
     if (position) position->store(-1.0);
     Pulse p;
@@ -62,6 +75,21 @@ bool play_preview_on_device(const std::vector<float>& pcm, uint32_t rate, const 
     while (pa_context_get_state(p.context) != PA_CONTEXT_READY) {
         if (cancel.load()) return false;
         if (Clock::now() >= setup_limit || !p.pump()) { error = "PulseAudio server unavailable"; throw std::runtime_error("PulseAudio output initialization failed"); }
+    }
+    std::string device = requested_device;
+    if (device == "default") {
+        DefaultSink sink;
+        pa_operation* op = pa_context_get_server_info(p.context, server_info, &sink);
+        if (!op) throw std::runtime_error("PulseAudio default output lookup failed");
+        while (!sink.called && pa_operation_get_state(op) == PA_OPERATION_RUNNING && Clock::now() < setup_limit) {
+            if (cancel.load() || !p.pump()) break;
+        }
+        if (pa_operation_get_state(op) == PA_OPERATION_RUNNING) pa_operation_cancel(op);
+        pa_operation_unref(op);
+        if (cancel.load()) return false;
+        if (!sink.called || sink.name.empty() || sink.name.front() == '@')
+            throw std::runtime_error("PulseAudio default output unavailable");
+        device = std::move(sink.name);
     }
     pa_sample_spec spec{PA_SAMPLE_FLOAT32LE, rate, 2};
     pa_channel_map map;

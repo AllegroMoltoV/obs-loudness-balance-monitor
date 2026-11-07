@@ -287,15 +287,25 @@ def position_test():
     results = []
     for rate in (44100, 48000):
         for mode in ('normal', 'cancel'):
-            args = [str(executable), uid, str(rate), mode]
+            # Exercise default resolution in the existing normal-playback cases; keep explicit cancellation coverage.
+            selected = 'default' if mode == 'normal' else uid
+            default_before = run([selector, '--default'], timeout=10).decode().strip() if selected == 'default' else None
+            if selected == 'default' and default_before != uid:
+                raise RuntimeError('Default output changed before playback; do not change runner audio settings')
+            args = [str(executable), selected, str(rate), mode]
             started = time.monotonic()
             result = diagnostic(args)
-            result.update(rate=rate, mode=mode, uid=uid, elapsed=time.monotonic() - started)
+            elapsed = time.monotonic() - started
+            default_after = run([selector, '--default'], timeout=10).decode().strip() if selected == 'default' else None
+            result.update(rate=rate, mode=mode, uid=uid, selected=selected, elapsed=elapsed,
+                          default_before=default_before, default_after=default_after,
+                          observation='CoreAudio selected UID and product AudioQueue playback result; no physical capture or queue device readback')
             results.append(result)
             (OUT / 'position-results.json').write_text(json.dumps(results, indent=2))
             (OUT / f'position-{rate}-{mode}.log').write_text(
                 result['stdout'] + '\nSTDERR:\n' + result['stderr'], encoding='utf-8')
-            if result['exit_code'] != 0 or 'passed=1 ' not in result['stdout']:
+            if (result['exit_code'] != 0 or 'passed=1 ' not in result['stdout'] or
+                    (selected == 'default' and default_after != default_before)):
                 raise RuntimeError(f'Playback position failed: {rate} {mode}; see position-results.json')
     print('macOS playback position passed at 44100/48000 Hz, normal/cancel', flush=True)
 

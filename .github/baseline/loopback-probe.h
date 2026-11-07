@@ -30,3 +30,6 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+// Resolve only; never change the OS default.
+std::string default_render_device_id();

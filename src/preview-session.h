@@ -17,6 +17,7 @@ class PreviewSession : public QObject {
     Q_PROPERTY(qulonglong recordedTimestamp READ recorded_timestamp)
     Q_PROPERTY(qulonglong recordedRate READ recorded_rate)
     Q_PROPERTY(QVariantMap recordedAnalysis READ recorded_analysis)
+    Q_PROPERTY(double playbackSeconds READ playback_seconds)
 public:
     enum class State { idle, preparing, recording, waiting, ready, playing, failed };
     explicit PreviewSession(QObject *parent = nullptr);
@@ -42,7 +43,9 @@ public:
     State state() const { return state_; }
     QString message() const { return message_; }
     QString analysis_notice() const { return analysis_notice_; }
+    QString analysis_realtime_notice() const;
     double seconds() const;
+    double playback_seconds() const { return playback_position_.load(std::memory_order_relaxed); }
     unsigned countdown() const;
     static bool output_active();
 signals:

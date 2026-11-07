@@ -25,7 +25,7 @@ bool play_preview(const std::vector<float> &pcm, uint32_t rate, const std::strin
     error.clear();
     if (position) position->store(-1.0);
     if (cancel.load()) return false;
-    if (pcm.empty() || pcm.size() % 2 || !rate || id.empty() || id == "default" || id.front() == '@') {
+    if (pcm.empty() || pcm.size() % 2 || !rate || id.empty() || id.front() == '@') {
         error = "Invalid stereo recording or output device";
         return false;
     }

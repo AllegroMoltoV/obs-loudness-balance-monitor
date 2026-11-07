@@ -22,8 +22,12 @@
 
 - [録音試聴のカテゴリー解析の成立性](reports/2026-11-06-preview-category-analysis.md)
 
+- [2026-11-07 開発スキルの導入と適用範囲](reports/2026-11-07-skill-adoption.md)
+
 ## logs
 
 再確認が必要な実行ログを保存します。
 
 - [試用改善後の録音・試聴検証](reports/2026-11-06-preview-feedback-validation.md)
+
+- [2026-11-07 録音試聴の表示改善と既定出力の検証](reports/2026-11-07-preview-revision-validation.md)

@@ -48,6 +48,14 @@ const PreviewAnalysisPoint *PreviewSession::analysis_point() const
     return analysis_published_ && state_ == State::playing && seconds >= 0 && std::isfinite(seconds)
         ? analysis_.point_at(uint64_t(seconds * rate_)) : nullptr;
 }
+QString PreviewSession::analysis_realtime_notice() const
+{
+    if (!analysis_published_) return analysis_notice_;
+    if (state_ != State::playing) return obs_module_text("PreviewAnalysisNotPlaying");
+    const double position = playback_position_.load(std::memory_order_relaxed);
+    if (!std::isfinite(position) || position < 0.4) return obs_module_text("PreviewAnalysisWindowPending");
+    return {};
+}
 bool PreviewSession::output_active()
 {
     return obs_frontend_streaming_active() || obs_frontend_recording_active() || obs_frontend_replay_buffer_active();
@@ -138,6 +146,21 @@ void PreviewSession::finish()
         if (analysis_notice_.isEmpty()) analysis_notice_ = obs_module_text("PreviewAnalysisError");
         blog(LOG_WARNING, "[LBM] Preview analysis unavailable: %s", analysis_error_.empty()
             ? "category frame count mismatch" : analysis_error_.c_str());
+    }
+    if (analysis_published_) {
+        if (uint64_t(recording_->frames()) < uint64_t(rate_) * 3)
+            analysis_notice_ = obs_module_text("PreviewAnalysisWindowShort");
+        else if (analysis_.summary().valid_points == 0)
+            analysis_notice_ = obs_module_text("PreviewAnalysisNoPairedSpeech");
+        size_t voice_points = 0, bgm_points = 0, active_points = 0;
+        for (const auto &point : analysis_.series()) {
+            voice_points += std::isfinite(point.voice_lufs);
+            bgm_points += std::isfinite(point.bgm_lufs);
+            active_points += point.voice_active;
+        }
+        blog(LOG_INFO, "[LBM] Preview analysis: rate=%u track=%u frames=%llu points=%zu voice_finite=%zu bgm_finite=%zu voice_active=%zu paired=%u",
+             rate_, track_ + 1, static_cast<unsigned long long>(recording_->frames()),
+             analysis_.series().size(), voice_points, bgm_points, active_points, analysis_.summary().valid_points);
     }
     clip_timestamp_ = recording_->first_timestamp();
     clip_frames_ = recording_->frames();

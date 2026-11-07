@@ -172,3 +172,24 @@ void LoopbackProbe::save(const std::string &prefix) const {
     meta.text(m.str());
 }
 
+
+std::string default_render_device_id()
+{
+    return std::async(std::launch::async, [] {
+        Resources r;
+        if (FAILED(r.com) || FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator), reinterpret_cast<void **>(&r.enumerator))) ||
+            FAILED(r.enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &r.device)))
+            throw std::runtime_error("Cannot resolve default render endpoint");
+        LPWSTR raw = nullptr;
+        if (FAILED(r.device->GetId(&raw))) throw std::runtime_error("Cannot read default render endpoint ID");
+        std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> owned(raw, CoTaskMemFree);
+        const std::wstring wide(raw);
+        std::string id;
+        for (const wchar_t ch : wide) {
+            if (ch > 127) throw std::runtime_error("Non-ASCII endpoint ID");
+            id.push_back(static_cast<char>(ch));
+        }
+        return id;
+    }).get();
+}

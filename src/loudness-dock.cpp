@@ -16,6 +16,7 @@
 #include <QStyle>
 #include <QSizePolicy>
 #include <QPainter>
+#include <QMouseEvent>
 
 #include <cmath>
 
@@ -29,6 +30,36 @@ QLabel *wrapped_label(const QString &text = {})
     label->setMinimumWidth(0);
     label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     return label;
+}
+
+class CheckBoxLabel : public QLabel {
+public:
+    explicit CheckBoxLabel(QCheckBox *check, const QString &text) : QLabel(text), check_(check)
+    {
+        setWordWrap(true);
+        setTextFormat(Qt::PlainText);
+        setMinimumWidth(0);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        setBuddy(check);
+    }
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
+            check_->click();
+        QLabel::mouseReleaseEvent(event);
+    }
+private:
+    QCheckBox *check_;
+};
+
+void add_wrapped_checkbox(QVBoxLayout *layout, QCheckBox *check, const QString &text)
+{
+    check->setAccessibleName(text);
+    auto *row = new QHBoxLayout();
+    row->addWidget(check, 0, Qt::AlignTop);
+    row->addWidget(new CheckBoxLabel(check, text), 1);
+    layout->addLayout(row);
 }
 
 void add_section_help(QVBoxLayout *layout, QWidget *parent, const char *title_key, const QString &body)
@@ -140,7 +171,6 @@ void LoudnessDock::setup_ui()
     auto *preview_group = new QGroupBox(obs_module_text("PreviewTitle"));
     auto *preview_layout = new QVBoxLayout(preview_group);
     add_section_help(preview_layout, preview_group, "PreviewTitle", obs_module_text("PreviewHelpDetail"));
-    preview_layout->addWidget(wrapped_label(obs_module_text("PreviewHelp")));
     preview_status_ = wrapped_label();
     preview_status_->setObjectName("previewStatus");
     preview_status_->setMargin(6);
@@ -148,14 +178,22 @@ void LoudnessDock::setup_ui()
     preview_recorded_track_ = wrapped_label();
     preview_recorded_track_->setObjectName("previewRecordedTrack");
     preview_layout->addWidget(preview_recorded_track_);
+    preview_analysis_group_ = new QGroupBox(obs_module_text("PreviewAnalysisTitle"));
+    auto *analysis_layout = new QVBoxLayout(preview_analysis_group_);
+    add_section_help(analysis_layout, preview_analysis_group_, "PreviewAnalysisTitle", obs_module_text("PreviewAnalysisHelp"));
     preview_realtime_ = wrapped_label();
     preview_realtime_->setObjectName("previewRealtime");
     preview_average_ = wrapped_label();
     preview_average_->setObjectName("previewAverage");
-    preview_realtime_->setToolTip(obs_module_text("PreviewAnalysisHelp"));
-    preview_average_->setToolTip(obs_module_text("PreviewAnalysisHelp"));
-    preview_layout->addWidget(preview_realtime_);
-    preview_layout->addWidget(preview_average_);
+    preview_realtime_balance_ = wrapped_label();
+    preview_realtime_balance_->setObjectName("previewRealtimeBalance");
+    preview_average_balance_ = wrapped_label();
+    preview_average_balance_->setObjectName("previewAverageBalance");
+    analysis_layout->addWidget(preview_realtime_);
+    analysis_layout->addWidget(preview_realtime_balance_);
+    analysis_layout->addWidget(preview_average_);
+    analysis_layout->addWidget(preview_average_balance_);
+    preview_layout->addWidget(preview_analysis_group_);
 
     // Stacked actions keep their full text visible in a narrow OBS dock.
     preview_record_ = new QPushButton();
@@ -178,33 +216,29 @@ void LoudnessDock::setup_ui()
     connect(preview_refresh_, &QPushButton::clicked, this, &LoudnessDock::refresh_preview_devices);
     preview_layout->addWidget(preview_refresh_);
 
-    preview_manual_track_ = new QCheckBox(obs_module_text("PreviewManualTrack"));
+    preview_manual_track_ = new QCheckBox();
     preview_manual_track_->setObjectName("previewManualTrack");
-    preview_manual_track_->setToolTip(obs_module_text("PreviewTrackHelp"));
-    preview_layout->addWidget(preview_manual_track_);
+    add_wrapped_checkbox(preview_layout, preview_manual_track_, obs_module_text("PreviewManualTrack"));
     preview_track_ = new QComboBox();
     preview_track_->setObjectName("previewTrack");
     for (int i = 0; i < 6; ++i)
         preview_track_->addItem(QString::fromUtf8(obs_module_text("PreviewTrackNumber")).arg(i + 1), i);
-    preview_track_->setToolTip(obs_module_text("PreviewTrackHelp"));
     preview_layout->addWidget(preview_track_);
     preview_track_info_ = wrapped_label();
     preview_track_info_->setObjectName("previewTrackInfo");
     preview_layout->addWidget(preview_track_info_);
     connect(preview_manual_track_, &QCheckBox::toggled, this, &LoudnessDock::update_preview);
 
-    preview_monitor_ = new QCheckBox(obs_module_text("PreviewMonitorOff"));
+    preview_monitor_ = new QCheckBox();
     preview_monitor_->setObjectName("previewMonitorOff");
-    preview_monitor_->setToolTip(obs_module_text("PreviewMonitorHelp"));
     preview_monitor_->setChecked(true);
     connect(preview_monitor_, &QCheckBox::toggled, this, &LoudnessDock::update_preview);
-    preview_layout->addWidget(preview_monitor_);
+    add_wrapped_checkbox(preview_layout, preview_monitor_, obs_module_text("PreviewMonitorOff"));
 
     connect(preview_record_, &QPushButton::clicked, this, [this] {
         using State = PreviewSession::State;
-        if (preview_->state() == State::preparing) {
-            preview_->cancel();
-        } else if (preview_->state() == State::recording) {
+        if (preview_->state() == State::preparing) return;
+        if (preview_->state() == State::recording) {
             preview_->finish();
         } else {
             const auto choice = preview_manual_track_->isChecked()
@@ -272,12 +306,10 @@ void LoudnessDock::setup_ui()
 	balance_status_ = new QFrame();
 	balance_status_->setFixedSize(60, 40);
 	balance_status_->setFrameStyle(QFrame::Box);
-	balance_status_->setToolTip(obs_module_text("BalanceTooltip"));
 	balance_status_label_ = new QLabel(obs_module_text("Balance"));
 	balance_status_label_->setAlignment(Qt::AlignCenter);
 	balance_status_label_->setWordWrap(true);
 	balance_status_label_->setMinimumWidth(0);
-	balance_status_label_->setToolTip(obs_module_text("BalanceTooltip"));
 	balance_frame->addWidget(balance_status_);
 	balance_frame->addWidget(balance_status_label_);
 	status_layout->addLayout(balance_frame);
@@ -287,12 +319,10 @@ void LoudnessDock::setup_ui()
 	mix_status_ = new QFrame();
 	mix_status_->setFixedSize(60, 40);
 	mix_status_->setFrameStyle(QFrame::Box);
-	mix_status_->setToolTip(obs_module_text("MixTooltip"));
 	mix_status_label_ = new QLabel(obs_module_text("Mix"));
 	mix_status_label_->setAlignment(Qt::AlignCenter);
 	mix_status_label_->setWordWrap(true);
 	mix_status_label_->setMinimumWidth(0);
-	mix_status_label_->setToolTip(obs_module_text("MixTooltip"));
 	mix_frame->addWidget(mix_status_);
 	mix_frame->addWidget(mix_status_label_);
 	status_layout->addLayout(mix_frame);
@@ -302,12 +332,10 @@ void LoudnessDock::setup_ui()
 	clip_status_ = new QFrame();
 	clip_status_->setFixedSize(60, 40);
 	clip_status_->setFrameStyle(QFrame::Box);
-	clip_status_->setToolTip(obs_module_text("ClipTooltip"));
 	clip_status_label_ = new QLabel(obs_module_text("Clip"));
 	clip_status_label_->setAlignment(Qt::AlignCenter);
 	clip_status_label_->setWordWrap(true);
 	clip_status_label_->setMinimumWidth(0);
-	clip_status_label_->setToolTip(obs_module_text("ClipTooltip"));
 	clip_frame->addWidget(clip_status_);
 	clip_frame->addWidget(clip_status_label_);
 	status_layout->addLayout(clip_frame);
@@ -478,6 +506,7 @@ void LoudnessDock::refresh_preview_devices()
     const QString selected = preview_device_->currentData().toString();
     preview_device_->clear();
     preview_device_->addItem(obs_module_text("PreviewSelectDevice"), "");
+    preview_device_->addItem(obs_module_text("PreviewDefaultDevice"), "default");
     for (const auto &device : preview_devices())
         preview_device_->addItem(QString::fromStdString(device.name), QString::fromStdString(device.id));
     int index = preview_device_->findData(selected);
@@ -494,24 +523,25 @@ void LoudnessDock::update_preview()
     using State = PreviewSession::State;
     const auto state = preview_->state();
     const bool has_recording = preview_->recorded_frames() != 0;
-    auto show_analysis = [](QLabel *label, const char *title, double voice, double bgm, std::optional<Status> status) {
+    auto show_analysis = [this](QLabel *label, QLabel *balance, const char *title, double voice, double bgm, std::optional<Status> status) {
         const auto number = [](double v) { return std::isfinite(v) ? QString::number(v, 'f', 1) : QString("--"); };
         const char *key = !status ? "PreviewAnalysisUnrated" :
             *status == Status::OK ? "PreviewAnalysisGreen" : *status == Status::WARN ? "PreviewAnalysisYellow" : "PreviewAnalysisRed";
-        const char *color = !status ? "#888888" :
-            *status == Status::OK ? "#4CAF50" : *status == Status::WARN ? "#FFC107" : "#F44336";
         label->setText(QString::fromUtf8(obs_module_text("PreviewAnalysisRow"))
-            .arg(obs_module_text(title), number(voice), number(bgm), obs_module_text(key)));
-        label->setStyleSheet(QString("QLabel { border-left: 4px solid %1; padding: 4px; }").arg(color));
+            .arg(obs_module_text(title), number(voice), number(bgm)));
+        balance->setText(QString::fromUtf8(obs_module_text("PreviewAnalysisBalance")).arg(obs_module_text(key)));
+        const QString color = status ? status_to_style(*status) : "background-color: #888888;";
+        balance->setStyleSheet(color + " color: #111111; padding: 5px; font-weight: bold; border-radius: 3px;");
     };
-    preview_realtime_->setVisible(has_recording);
-    preview_average_->setVisible(has_recording);
+    preview_analysis_group_->setVisible(has_recording);
     if (has_recording) {
         const auto *point = preview_->analysis_point();
-        show_analysis(preview_realtime_, "PreviewAnalysisRealtime", point ? point->voice_lufs : -HUGE_VAL,
+        show_analysis(preview_realtime_, preview_realtime_balance_, "PreviewAnalysisRealtime", point ? point->voice_lufs : -HUGE_VAL,
             point ? point->bgm_lufs : -HUGE_VAL, point ? point->balance_status : std::nullopt);
         const auto mean = preview_->analysis_summary();
-        show_analysis(preview_average_, "PreviewAnalysisAverage", mean.voice_lufs, mean.bgm_lufs, mean.balance_status);
+        show_analysis(preview_average_, preview_average_balance_, "PreviewAnalysisAverage", mean.voice_lufs, mean.bgm_lufs, mean.balance_status);
+        if (!preview_->analysis_realtime_notice().isEmpty())
+            preview_realtime_->setText(preview_realtime_->text() + QChar(10) + preview_->analysis_realtime_notice());
         if (!preview_->analysis_notice().isEmpty())
             preview_average_->setText(preview_average_->text() + QChar(10) + preview_->analysis_notice());
     }
@@ -528,16 +558,16 @@ void LoudnessDock::update_preview()
     preview_device_->setEnabled(!busy);
     preview_refresh_->setEnabled(!busy);
     preview_monitor_->setEnabled(!busy);
-    preview_track_info_->setVisible(!busy);
-    preview_track_info_->setText(manual ? QString::fromUtf8(obs_module_text("PreviewTrackHelp")) :
-        choice.track >= 0 ? QString::fromUtf8(obs_module_text("PreviewAutoTrack")).arg(choice.track + 1) : choice.error);
+    preview_track_info_->setVisible(!busy && !manual);
+    preview_track_info_->setText(choice.track >= 0 ? QString::fromUtf8(obs_module_text("PreviewAutoTrack")) : choice.error);
     const bool valid_start = choice.track >= 0 && !preview_device_->currentData().toString().isEmpty();
-    preview_record_->setEnabled(!blocked && state != State::waiting && state != State::playing &&
-                               (state == State::preparing || state == State::recording || valid_start));
+    preview_record_->setEnabled(!blocked && state != State::preparing && state != State::waiting && state != State::playing &&
+                               (state == State::recording || valid_start));
     preview_play_->setVisible(state == State::waiting || state == State::playing || state == State::ready);
     preview_play_->setEnabled(!blocked);
-    preview_record_->setText(obs_module_text(state == State::preparing ? "PreviewCancelPreparation" :
-        state == State::recording ? "PreviewFinish" : state == State::ready ? "PreviewRerecord" : "PreviewRecord"));
+    preview_record_->setText(state == State::preparing ?
+        QString::fromUtf8(obs_module_text("PreviewRecordCountdown")).arg(preview_->countdown()) :
+        QString::fromUtf8(obs_module_text(state == State::recording ? "PreviewFinish" : state == State::ready ? "PreviewRerecord" : "PreviewRecord")));
     preview_play_->setText(obs_module_text(state == State::waiting ? "PreviewStopWaiting" :
                                          state == State::playing ? "PreviewStop" : preview_has_played_ ? "PreviewReplay" : "PreviewPlay"));
     static const QIcon record_icon = [] {
@@ -551,7 +581,7 @@ void LoudnessDock::update_preview()
         painter.end();
         return QIcon(record_mark);
     }();
-    preview_record_->setIcon(state == State::preparing || state == State::recording
+    preview_record_->setIcon(state == State::preparing ? QIcon() : state == State::recording
         ? style()->standardIcon(QStyle::SP_MediaStop) : record_icon);
     preview_play_->setIcon(style()->standardIcon(state == State::playing || state == State::waiting ? QStyle::SP_MediaStop : QStyle::SP_MediaPlay));
     const bool recorded = busy || state == State::ready;

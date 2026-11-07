@@ -24,9 +24,11 @@ static std::string string_property(AudioDeviceID id, AudioObjectPropertySelector
     return encoded.data();
 }
 
-int main()
+int main(int argc, char **argv)
 {
     try {
+        const bool use_default = argc == 2 && std::string(argv[1]) == "--default";
+        if (argc != 1 && !use_default) throw std::runtime_error("Usage: macos-output-device [--default]");
         AudioObjectPropertyAddress address{kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
                                            kAudioObjectPropertyElementMain};
         UInt32 size = 0;
@@ -56,7 +58,21 @@ int main()
         if (candidates.size() != 1)
             throw std::runtime_error("Expected one active Apple Virtual Sound Device output, found " +
                                      std::to_string(candidates.size()));
-        std::cout << candidates.front() << '\n';
+        if (use_default) {
+            address = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+                       kAudioObjectPropertyElementMain};
+            AudioDeviceID device = kAudioObjectUnknown;
+            size = sizeof(device);
+            check(AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size, &device));
+            if (device == kAudioObjectUnknown) throw std::runtime_error("No default output device");
+            const auto uid = string_property(device, kAudioDevicePropertyDeviceUID);
+            if (uid != candidates.front())
+                throw std::runtime_error("Default output is not the approved Apple Virtual Sound Device");
+            std::cerr << "default_output_id=" << device << " uid=" << uid << '\n';
+            std::cout << uid << '\n';
+        } else {
+            std::cout << candidates.front() << '\n';
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

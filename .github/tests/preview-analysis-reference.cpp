@@ -40,7 +40,7 @@ int main(int argc,char **argv) {
         const size_t end=offset+480;
         if(end%4800) continue;
         double vl=-HUGE_VAL,bl=-HUGE_VAL;
-        if(end>=144000){ebur128_loudness_shortterm(vs,&vl);ebur128_loudness_shortterm(bs,&bl);}
+        if(end>=19200){ebur128_loudness_momentary(vs,&vl);ebur128_loudness_momentary(bs,&bl);}
         int rating=-1;
         if(active && std::isfinite(vl) && std::isfinite(bl)){
             double delta=vl-bl;
@@ -48,7 +48,12 @@ int main(int argc,char **argv) {
             else if(delta>=8.5) color=0;
             else if(delta<4.5) color=2;
             else if(delta<7.5 && delta>=5.5) color=1;
-            rating=color;sumv+=vl;sumb+=bl;++valid;
+            rating=color;
+        }
+        if(active && end>=144000){
+            double sv=-HUGE_VAL,sb=-HUGE_VAL;
+            ebur128_loudness_shortterm(vs,&sv);ebur128_loudness_shortterm(bs,&sb);
+            if(std::isfinite(sv) && std::isfinite(sb)){sumv+=sv;sumb+=sb;++valid;}
         }
         std::cout<<end<<','<<vl<<','<<bl<<','<<active<<','<<rating<<'\n';
     }
