@@ -82,13 +82,14 @@ Set-Content -LiteralPath (Join-Path $ConfigDir 'user.ini') -Value $UserIni -Enco
 Set-Content -LiteralPath (Join-Path $ConfigDir 'global.ini') -Value "[General]`nEnableAutoUpdates=false`n" -Encoding utf8
 $ProfileIni = "[General]`nName=Baseline`n[Audio]`nSampleRate=48000`nChannelSetup=Stereo`nMonitoringDeviceId=default`n[Video]`nBaseCX=640`nBaseCY=360`nOutputCX=640`nOutputCY=360`nFPSType=0`nFPSCommon=30`n"
 Set-Content -LiteralPath (Join-Path $ProfileDir 'basic.ini') -Value $ProfileIni -Encoding utf8
-@{
+$InitialScene = @{
     name = 'Baseline'
     sources = @(@{ name = 'Scene'; id = 'scene'; settings = @{ items = @() } })
     scene_order = @(@{ name = 'Scene' })
     current_scene = 'Scene'
     current_program_scene = 'Scene'
-} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Encoding utf8
+} | ConvertTo-Json -Depth 8
+Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Value $InitialScene -Encoding utf8
 $PreviousResultDir = $env:LBM_BASELINE_RESULT_DIR
 $PreviousPhase = $env:LBM_BASELINE_PHASE
 $Process = $null
@@ -96,6 +97,8 @@ try {
     foreach ($Stage in @('fresh', 'old-setup', 'upgrade', 'restore-hidden')) {
         $Phase = switch ($Stage) { 'fresh' { 'setup' }; 'old-setup' { 'setup' }; 'upgrade' { 'restore' }; default { 'restore-hidden' } }
         if ($Stage -eq 'old-setup') {
+            # Start the legacy setup with its own sources instead of the fresh-install scene.
+            Set-Content -LiteralPath (Join-Path $SceneDir 'Baseline.json') -Value $InitialScene -Encoding utf8
             # Remove only the new-layout binaries inside this disposable installation.
             $InstallRoot = [IO.Path]::GetFullPath($ProductInstall)
             foreach ($Name in @('loudness-balance-monitor.dll', 'loudness-balance-monitor.pdb')) {
