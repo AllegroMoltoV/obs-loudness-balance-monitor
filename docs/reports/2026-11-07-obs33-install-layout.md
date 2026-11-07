@@ -2,7 +2,7 @@
 
 ## 対象と結果
 
-Loudness Balance Monitor 1.0.2 の候補を OBS 33 の新構成へ変更した。音声処理、評価ロジック、設定形式は変更していない。計画の正本は Beads の obs-loudness-balance-monitor-142。
+Loudness Balance Monitor 1.0.2 を OBS 33 の新構成へ変更した。音声処理、評価ロジック、設定形式は変更していない。計画の正本は Beads の obs-loudness-balance-monitor-142。
 
 DLL と PDB を製品フォルダー直下へ配置し、data/locale を維持した。README にフォルダー未作成時、新規導入、旧版更新、ポータブル版の手順を記載した。
 
@@ -33,8 +33,22 @@ OBS が返すモジュールパスには相対パスが含まれる。検証処�
 
 両修正は依頼者 AllegroMoltoV の承認後に実施した。製品の音声処理は変更していない。
 
-## 残る提供工程
+## 公開結果
 
-通常環境での依頼者の目視確認、最終タグの配布 ZIP 確認、Release・Forum 更新は未実施。Simple Drop Shadow の候補がそろってから、先行 2 製品の目視確認へ進む。Simple Pitch Shift を待たない。
+依頼者 AllegroMoltoV が通常環境で先行 2 製品を目視確認し、公開を承認した。PR #10 をマージし、ruleset の全設定を復元・照合した。
 
-ローカル証拠は .deps/install-142-ci-success と .deps/install-142-portable-fixed に保存した。
+[タグ CI 42372805503](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/actions/runs/42372805503) の 3 OS ビルドが成功した。最終 ZIP を隔離 OBS 33.0.1 の新配置から読み込み、設定保存と声・BGM のメーターを確認した。Release 用ビルドの確認では、完了済みの旧版更新試験を繰り返していない。
+
+[1.0.2 Release](https://github.com/AllegroMoltoV/obs-loudness-balance-monitor/releases/tag/v1.0.2) を公開し、再取得した ZIP と検証品の SHA256 が一致した。
+
+- ZIP: D1A01A05656942AB114C8FB2BE01CB9F06333B3E589A575B45E351AEC16D5552
+- DLL: 377211352B2E871AC00717FEDDCF01FCF8A5E2F75300C50BF9297DD75EAE52AB
+- 証拠: .deps/install-142-final-load/results
+
+Forum の本文と外部ダウンロード URL を更新した。Go to download が 1.0.2 Release を開くことを Brave で確認した。AI 利用開示と GIF を保持した。
+
+## 保留事項
+
+Forum リソースに審査待ちと表示され、新版の追加操作が表示されていない。既存の更新投稿 8817・8819 を保持した。1.0.2 の更新履歴登録は、依頼者の指定により審査通過後の再依頼まで保留する。本文の保存と一般公開の反映を同一視しない。
+
+通常環境には目視確認済みの CI 候補を保持している。公開 ZIP 自体のロード検証は隔離環境で完了した。Simple Pitch Shift は別工程として再開計画を提示する。
