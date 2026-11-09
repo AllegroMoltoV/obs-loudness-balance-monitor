@@ -165,10 +165,10 @@ OBSを終了し、OBS本体のルートにある`plugins`フォルダーへ製�
 
 ## ソースからのビルド
 
-v1.0.2のソースを取得してください。以降のコマンドは取得したディレクトリで実行してください。
+v1.0.3のソースを取得してください。以降のコマンドは取得したディレクトリで実行してください。
 
 ```sh
-git clone --branch v1.0.2 https://github.com/AllegroMoltoV/obs-loudness-balance-monitor.git
+git clone --branch v1.0.3 https://github.com/AllegroMoltoV/obs-loudness-balance-monitor.git
 cd obs-loudness-balance-monitor
 ```
 
@@ -235,6 +235,10 @@ Flatpak版OBSへの導入手順には対応していません。
 ラウドネスの計算には[libebur128](https://github.com/jiixyj/libebur128) v1.2.6を静的リンクしています。libebur128のライセンスはMITです。
 
 ---
+## v1.0.3の変更
+
+配信プラグイン倉庫くん (https://soko-kun.allegromoltov.jp) に表示するロゴと説明の画像を、`.soko-kun/` に追加しました。音声処理と評価ロジックの変更はありません。
+
 ## v1.0.2の変更
 
 Windows ZIPをOBS 33の新しいプラグイン構成へ変更しました。フォルダーの作成と旧版からの更新手順を追加しました。音声処理と評価ロジックの変更はありません。
