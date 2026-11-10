@@ -4,6 +4,8 @@ OBS Studioで声とBGMのラウドネスバランスを確認するプラグイ�
 
 リアルタイムモニタで現在の状態を確認し、録音モニタでOBSの最終ミックスを録音・試聴できます。配信前に声の聞こえやすさや音割れのおそれを確認し、OBSの音量設定を見直す際に使ってください。
 
+[配信プラグイン倉庫くん](https://soko-kun.allegromoltov.jp/plugins/allegromoltov/obs-loudness-balance-monitor) にも掲載しています。 / Also listed on [Plugin Soko-kun](https://soko-kun.allegromoltov.jp/plugins/allegromoltov/obs-loudness-balance-monitor?lang=en).
+
 ## 動作紹介
 
 ### リアルタイムモニタ
