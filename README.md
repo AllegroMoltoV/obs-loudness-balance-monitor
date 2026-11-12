@@ -1,4 +1,4 @@
-# Loudness Balance Monitor
+# 音量バランスモニター / Loudness Balance Monitor
 
 OBS Studioで声とBGMのラウドネスバランスを確認するプラグインです。ラウドネスとは、人が感じる音の大きさを表す尺度です。
 
