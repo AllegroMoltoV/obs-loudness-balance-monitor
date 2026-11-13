@@ -237,6 +237,10 @@ Flatpak版OBSへの導入手順には対応していません。
 ラウドネスの計算には[libebur128](https://github.com/jiixyj/libebur128) v1.2.6を静的リンクしています。libebur128のライセンスはMITです。
 
 ---
+## v1.0.4の変更
+
+- リリースの配布物にビルドの来歴の証明 (GitHub Artifact Attestation) を付けるようにしました。プラグインの動作は v1.0.3 と同じです。
+
 ## v1.0.3の変更
 
 配信プラグイン倉庫くん (https://soko-kun.allegromoltov.jp) に表示するロゴと説明の画像を、`.soko-kun/` に追加しました。音声処理と評価ロジックの変更はありません。
