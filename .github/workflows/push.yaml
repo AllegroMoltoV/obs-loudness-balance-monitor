@@ -30,6 +30,10 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     needs: build-project
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     defaults:
       run:
         shell: bash
@@ -41,13 +45,14 @@ jobs:
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
 
+          # v1.0.0 の形のタグも受け付ける。version はタグ名のまま使う
           case "${GITHUB_REF_NAME}" in
-            +([0-9]).+([0-9]).+([0-9]) )
+            ?(v)+([0-9]).+([0-9]).+([0-9]) )
               echo 'validTag=true' >> $GITHUB_OUTPUT
               echo 'prerelease=false' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
-            +([0-9]).+([0-9]).+([0-9])-@(beta|rc)*([0-9]) )
+            ?(v)+([0-9]).+([0-9]).+([0-9])-@(beta|rc)*([0-9]) )
               echo 'validTag=true' >> $GITHUB_OUTPUT
               echo 'prerelease=true' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
@@ -99,6 +104,25 @@ jobs:
           for file in ${{ github.workspace }}/@(*.exe|*.deb|*.ddeb|*.pkg|*.tar.xz|*.zip); do
             echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> ${{ github.workspace }}/CHECKSUMS.txt
           done
+
+      - name: List Release Files 📋
+        if: fromJSON(steps.check.outputs.validTag)
+        run: |
+          : List Release Files 📋
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+          shopt -s extglob
+          shopt -s nullglob
+
+          cd ${{ github.workspace }}
+          files=(@(*.exe|*.zip|*.pkg|*.deb|*.ddeb|*.tar.xz))
+          sha256sum "${files[@]}" > ${{ runner.temp }}/release-checksums.txt
+
+      # 配信プラグイン倉庫くんの掲載の条件: リリースのすべての配布物に、このタグのビルドの来歴の証明を付ける
+      - name: Attest Build Provenance 🔏
+        if: fromJSON(steps.check.outputs.validTag)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ runner.temp }}/release-checksums.txt
 
       - name: Create Release 🛫
         if: fromJSON(steps.check.outputs.validTag)
