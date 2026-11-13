@@ -112,7 +112,9 @@ jobs:
           print "pluginName=${product_name}" >> $GITHUB_OUTPUT
           print "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
 
+      # タグのビルドではキャッシュを復元せず、まっさらな状態からビルドする
       - uses: actions/cache/restore@v4
+        if: github.ref_type != 'tag'
         id: ccache-cache
         with:
           path: ${{ github.workspace }}/.ccache
@@ -203,7 +205,9 @@ jobs:
           echo "pluginName=${product_name}" >> $GITHUB_OUTPUT
           echo "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
 
+      # タグのビルドではキャッシュを復元せず、まっさらな状態からビルドする
       - uses: actions/cache/restore@v4
+        if: github.ref_type != 'tag'
         id: ccache-cache
         with:
           path: ${{ github.workspace }}/.ccache
