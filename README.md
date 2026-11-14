@@ -237,6 +237,10 @@ Flatpak版OBSへの導入手順には対応していません。
 ラウドネスの計算には[libebur128](https://github.com/jiixyj/libebur128) v1.2.6を静的リンクしています。libebur128のライセンスはMITです。
 
 ---
+## v1.0.5の変更
+
+- 配信プラグイン倉庫くんに表示名と載せる OS を伝える宣言ファイル (.soko-kun/config.json) を足しました。macOS と Linux の配布物は動作を確かめていないため、倉庫くんには Windows の配布物だけを載せます。リポジトリの名前を obs-loudness-balance-monitor から loudness-balance-monitor に変えました。プラグインの動作は v1.0.4 と同じです。
+
 ## v1.0.4の変更
 
 - リリースの配布物にビルドの来歴の証明 (GitHub Artifact Attestation) を付けるようにしました。プラグインの動作は v1.0.3 と同じです。
